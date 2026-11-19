@@ -1,0 +1,9 @@
+# Local tool settings (not part of the app)
+.claude/
+
+# Python / editor clutter
+__pycache__/
+*.pyc
+.vscode/
+Thumbs.db
+desktop.ini
