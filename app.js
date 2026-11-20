@@ -11,8 +11,9 @@
 
 const FIND_LENGTH = 10;     // most questions in the "find the letter" step
 const MAX_OPTIONS = 4;      // most letters to choose from (first 2, then 3, then 4)
-const PASS_RATIO = { 1: 0.8, 2: 0.9, 3: 0.9 }; // right on the first try needed to pass: ⭐ 80%, ⭐⭐ and ⭐⭐⭐ 90%
+const PASS_RATIO = { 1: 0.8, 2: 0.85, 3: 0.9 }; // right on the first try needed to pass: ⭐ 80%, ⭐⭐ 85%, ⭐⭐⭐ 90%
 const FIND_BY_STARS = { 1: 4, 2: 5, 3: 6 };      // "find the letter" questions, unless a level sets its own
+const MAX_NEW_ITEMS = 2;    // most new syllables + words in one level (more gives a warning in the console)
 const MAX_REC_SECONDS = 4;  // a recording stops by itself after this
 
 /* ---------- Texts (all in one place, easy to change) ---------- */
@@ -32,7 +33,7 @@ const T = {
   words: 'Cuvinte',
   locked: name => `Mai întâi trebuie trecut nivelul ${name}. (Toate nivelurile se pot deschide din Setări.)`,
   settings: 'Setări',
-  levelsHelp: (done, total) => `${done} din ${total} niveluri trecute. Fiecare literă are până la 3 niveluri: ⭐ introducere, ⭐⭐ exerciții, ⭐⭐⭐ (în plus). Un nivel ⭐ este trecut cu 80% răspunsuri corecte din prima încercare, ⭐⭐ și ⭐⭐⭐ cu 90%. Litera următoare se deschide după ⭐⭐.`,
+  levelsHelp: (done, total) => `${done} din ${total} niveluri trecute. Fiecare literă are până la 3 niveluri: ⭐ introducere, ⭐⭐ exerciții, ⭐⭐⭐ (în plus). Un nivel ⭐ este trecut cu 80% răspunsuri corecte din prima încercare, ⭐⭐ cu 85%, ⭐⭐⭐ cu 90%. Litera următoare se deschide după ⭐⭐.`,
   unlockAll: 'Deschide toate nivelurile',
   testMode: 'Mod de testare: butoane ◀ ▶ pentru a sări între exerciții',
   resetProgress: 'Șterge progresul',
@@ -50,8 +51,26 @@ const T = {
   recorderHelp: 'Apasă ● și vorbește, apoi apasă ■ (se oprește singur după 4 secunde; instrucțiunile după 8). Pentru litere spune sunetul („mmm”, „sss”), nu numele literei („me”, „se”). Înregistrarea se aude imediat, ca s-o poți verifica. Dacă nu-ți place, înregistreaz-o din nou.',
   recLetter: 'sunetul literei',
   recExample: 'cuvânt exemplu',
+  recSplit: 'silabă din cuvântul despărțit',
   otherLetters: 'Alte litere (pentru alfabet)',
   instructions: 'Instrucțiuni (vocea ta)',
+  overview: 'Prezentare niveluri',
+  openOverview: 'Prezentarea nivelurilor',
+  overviewHelp: (n, total) => `${n} niveluri, ${total} sarcini în total. Litera nivelului este roșie. Procentul arată cât trebuie să fie corect din prima încercare.`,
+  ovLearn: 'Prezentarea literei',
+  ovTrace: 'Scrie litera',
+  ovFind: 'Găsește litera după sunet',
+  ovAllNew: l => `toate cu ${l} · 2 → 4 variante`,
+  ovSomeNew: (n, l) => `${n} cu ${l}, restul litere învățate · 2 → 4 variante`,
+  ovPair: 'Perechi: literă mare – mică',
+  ovAnyLetters: 'orice litere învățate',
+  ovRead: 'Ascultă silabe și cuvinte noi',
+  ovQuiz: 'Găsește silaba / cuvântul',
+  ovChoices: n => `${n} variante`,
+  ovAllSoFar: 'din tot ce s-a învățat',
+  ovMatch: 'Perechi: imagine – cuvânt',
+  ovNoNew: 'fără silabe sau cuvinte noi',
+  ovTotal: 'Total sarcini',
   record: 'Înregistrează',
   stop: 'Stop',
   micError: 'Nu pot folosi microfonul. Permite accesul la microfon pentru această pagină.',
@@ -114,7 +133,7 @@ const LEVEL_DATA = LEVELS.map(level => {
   }).filter(Boolean);
   const syllables = (level.syllables || []).map(fixCedilla);
   const words = (level.words || []).map(fixCedilla);
-  if (syllables.length + words.length > 4) console.warn(`letters.js: level ${level.letters} ${'⭐'.repeat(level.stars || 1)} has more than 4 new syllables/words`);
+  if (syllables.length + words.length > MAX_NEW_ITEMS) console.warn(`letters.js: level ${level.letters} ${'⭐'.repeat(level.stars || 1)} has more than ${MAX_NEW_ITEMS} new syllables/words`);
   return {
     letters,
     syllables,
@@ -196,6 +215,42 @@ const SLUG = { 'ă': 'a1', 'â': 'a2', 'î': 'i2', 'ș': 's1', 'ț': 't1' };
 const slug = text => text.toLocaleLowerCase('ro').replace(/[ăâîșț]/g, c => SLUG[c]).replace(/[^a-z0-9]/g, '');
 const letterKey = l => 'L_' + slug(l.lower);   // a letter's sound
 const textKey = text => 'T_' + slug(text);     // a syllable or word
+
+// Splits a word into syllables, the simple way: a consonant between two vowels starts
+// a new syllable (ma-ma, A-na, I-sus, Ma-nu); of two consonants, the second one does.
+// Vowels next to each other stay together (sau, mii, ia).
+const isVowel = ch => 'aeiouăâî'.includes(ch.toLocaleLowerCase('ro'));
+function syllablesOf(word) {
+  const ch = [...word];
+  const out = [];
+  let cur = '';
+  ch.forEach((c, k) => {
+    cur += c;
+    const next = ch[k + 1];
+    const after = ch[k + 2];
+    if (!next || !after || isVowel(next) || !isVowel(after)) return; // only before consonant + vowel
+    // ma | ma (vowel, then consonant + vowel), ar | bo (vowel + consonant, then consonant + vowel)
+    if (isVowel(c) || (k > 0 && isVowel(ch[k - 1]))) { out.push(cur); cur = ''; }
+  });
+  out.push(cur);
+  return out;
+}
+
+// What a syllable or word is built from when it is presented:
+// its letters (nu → n + u), or its syllables when it has more than one (Manu → Ma + nu).
+function presentParts(text) {
+  const syl = syllablesOf(text);
+  return syl.length > 1 ? syl : [...text];
+}
+// The sound of one part: a letter's sound, or a syllable's.
+function partSound(part) {
+  if ([...part].length > 1) return { key: textKey(part), text: part };
+  const l = BY_LOWER.get(part.toLocaleLowerCase('ro'));
+  return l ? { key: letterKey(l), text: l.say } : null;
+}
+// Syllables that are needed only because a longer word is split (e.g. "ma" for "mama").
+const splitSyllables = items => [...new Set(items.flatMap(t => presentParts(t).filter(p => [...p].length > 1)
+  .map(p => p.toLocaleLowerCase('ro'))))].filter(p => !items.includes(p));
 
 const audioFiles = new Set();
 const audioEl = new Audio();
@@ -405,6 +460,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
            #/letters       alphabet overview      #/letter/3   one letter
            #/levels        all levels             #/level/3    one level
            #/settings      #/inregistrare (recording page, laptop only)
+           #/prezentare    overview of all levels (new words, number of tasks)
    The back button on a page goes to its parent page; the phone's own back
    button behaves the same way. */
 const $app = document.getElementById('app');
@@ -445,6 +501,7 @@ function render(entering = false) {
   else if ((m = path.match(/^\/level\/(\d+)$/)) && LEVEL_DATA[+m[1]]) renderLevel(+m[1], entering);
   else if (path === '/settings') renderSettings();
   else if (path === '/inregistrare') renderRecorder();
+  else if (path === '/prezentare') renderOverview();
   else renderHome();
 }
 
@@ -465,7 +522,7 @@ const backButton = parent => iconButton('up', 'back', T.back, parent);
 
 // Big and small letter together: "M m".
 const glyphs = l => `<span class="glyphs"><span>${l.upper}</span><span>${l.lower}</span></span>`;
-const pairText = l => l.upper + l.lower;
+const pairText = l => `${l.upper} ${l.lower}`; // "M m": a space between, never split over two lines
 
 // The level's letter is shown in red inside syllables and words: always in ⭐ and ⭐⭐ levels;
 // in ⭐⭐⭐ only where the new syllables and words are presented (not in the exercises).
@@ -511,7 +568,7 @@ function renderHome() {
     ${topBar({ title: 'Bibcit', right: iconButton('go', 'settings', T.settings, '/settings') })}
     <div class="home">
       <button class="home-card" data-action="go" data-value="/letters">
-        <span class="art"><span class="glyphs">Aa Bb Cc</span></span>
+        <span class="art"><span class="glyphs abc">A&nbsp;a&ensp;B&nbsp;b&ensp;C&nbsp;c</span></span>
         <span class="label">${icon('grid')}<span>${T.alphabet}</span></span>
       </button>
       <button class="home-card levels-card" data-action="go" data-value="/levels">
@@ -595,17 +652,33 @@ function renderLevels() {
    learn → trace → find → pair → read (syllables & words) → readquiz → result */
 let lesson = null;
 
-function startLesson(i) {
-  // Only the ⭐ level has the introduction page.
+// The steps of level i. Only the ⭐ level has the introduction page.
+function levelSteps(i) {
   const lv = LEVEL_DATA[i];
   const steps = lv.stars === 1 ? ['learn', 'trace', 'find', 'pair'] : ['trace', 'find', 'pair'];
   if (lv.items.length) steps.push('read');
   if (lv.stars === 3 ? itemsUpTo(i).length >= 2 : lv.items.length) steps.push('readquiz');
   if (matchWords(i).length >= 2) steps.push('match'); // connect the picture with the word
   steps.push('result');
+  return steps;
+}
+
+// How many tasks the steps have (the exercises and the overview page both use these).
+const findLength = i => LEVEL_DATA[i].find || FIND_BY_STARS[LEVEL_DATA[i].stars];
+const pairCount = i => (LEVEL_DATA[i].stars === 1 && letterRank(i) < 3 ? 2 : 3); // ⭐ of i, s, u: 2, otherwise 3
+// "Find the letter": how many questions ask the level's own letter.
+function findFresh(i) {
+  const lv = LEVEL_DATA[i];
+  if (lv.stars === 1 || lettersUpTo(i).length <= lv.letters.length) return findLength(i);
+  return Math.floor(findLength(i) / 2) + 1;
+}
+
+function startLesson(i) {
+  const steps = levelSteps(i);
   preloadSounds([
     ...lettersUpTo(i).map(letterKey),
     ...LEVEL_DATA[i].items.map(textKey),
+    ...splitSyllables(LEVEL_DATA[i].items).map(textKey),
     ...Object.values(VOICE).map(v => v.key),
   ]);
   lesson = { level: i, steps, step: 0, pos: 0, part: 0, right: 0, total: 0, find: null, pair: null, rq: null, passed: false };
@@ -613,19 +686,8 @@ function startLesson(i) {
 
 const stepName = () => lesson.steps[lesson.step];
 
-function stepDots() {
-  const dots = lesson.steps.slice(0, -1)
-    .map((_, k) => `<i class="${k < lesson.step ? 'ok' : k === lesson.step ? 'now' : ''}"></i>`).join('');
-  const label = `<div class="level-label"><span>${levelName(lesson.level)}</span><div class="dots small">${dots}</div></div>`;
-  if (!settings.testMode) return label;
-  // test mode: jump to the previous / next exercise without doing it
-  const last = lesson.steps.length - 2; // the last exercise before the result
-  return `<div class="step-jump">
-    <button class="jump-btn" data-action="stepPrev" aria-label="${T.previous}"${lesson.step <= 0 ? ' disabled' : ''}>${icon('left')}</button>
-    ${label}
-    <button class="jump-btn" data-action="stepNext" aria-label="${T.next}"${lesson.step >= last ? ' disabled' : ''}>${icon('right')}</button>
-  </div>`;
-}
+// The level's name at the top.
+const levelHeader = () => `<div class="level-label">${levelText(lesson.level)} <span class="stars">${stars(lesson.level)}</span></div>`;
 
 // Test mode: go straight to exercise k of the level.
 function jumpToStep(k) {
@@ -638,7 +700,22 @@ function jumpToStep(k) {
   nextStep(); // sets the exercise up and starts its sound
 }
 
-const levelTopBar = () => topBar({ left: backButton('/levels'), center: stepDots() });
+// The steps of the level, as a row of dots under the top bar: done, now, still to come.
+// In test mode with ◀ ▶ beside the dots, to jump to the previous / next exercise.
+function stepDots() {
+  const dots = lesson.steps.slice(0, -1)
+    .map((_, k) => `<i class="${k < lesson.step ? 'ok' : k === lesson.step ? 'now' : ''}"></i>`).join('');
+  const row = `<div class="dots small steps">${dots}</div>`;
+  if (!settings.testMode) return row;
+  const last = lesson.steps.length - 2; // the last exercise before the result
+  return `<div class="step-jump">
+    <button class="jump-btn" data-action="stepPrev" aria-label="${T.previous}"${lesson.step <= 0 ? ' disabled' : ''}>${icon('left')}</button>
+    ${row}
+    <button class="jump-btn" data-action="stepNext" aria-label="${T.next}"${lesson.step >= last ? ' disabled' : ''}>${icon('right')}</button>
+  </div>`;
+}
+
+const levelTopBar = () => topBar({ left: backButton('/levels'), center: levelHeader() }) + stepDots();
 
 function renderLevel(i, entering) {
   if (!isOpen(i)) {
@@ -1175,7 +1252,7 @@ function makeFindQuiz(i) {
     pool,
     focus: LEVEL_DATA[i].letters,                               // the level's letter
     extras: lettersAfter(i, pool),                              // wrong choices while few letters are known
-    length: LEVEL_DATA[i].find || FIND_BY_STARS[LEVEL_DATA[i].stars],
+    length: findLength(i),
     options: MAX_OPTIONS,                                       // first 2 choices, then 3, then 4
     grow: true,
     newFirst: LEVEL_DATA[i].stars === 1 ? Infinity : 0,         // ⭐ introduction: every question asks the new letter
@@ -1187,7 +1264,7 @@ function makeFindQuiz(i) {
   // ⭐⭐ / ⭐⭐⭐: most questions (more than half) ask the level's letter, the first one always;
   // the others ask earlier letters, in a random order.
   if (LEVEL_DATA[i].stars > 1 && pool.length > LEVEL_DATA[i].letters.length) {
-    const fresh = Math.floor(quiz.length / 2) + 1;
+    const fresh = findFresh(i);
     quiz.plan = [true, ...shuffle(Array.from({ length: quiz.length - 1 }, (_, k) => k < fresh - 1))];
   }
   nextQuestion(quiz);
@@ -1201,20 +1278,32 @@ function itemsUpTo(i) {
   return out;
 }
 
-function makeReadQuiz(i) {
+// The syllable quiz of level i: what it asks, how many questions, how many choices.
+function readQuizSize(i) {
   const lv = LEVEL_DATA[i];
   const all = itemsUpTo(i);
   const mastery = lv.stars === 3;
   const pool = mastery ? all : lv.items;                     // ⭐⭐⭐ mixes everything so far
   const earlier = all.filter(t => !pool.includes(t));
   const defaultLength = lv.stars === 1 ? 4 : mastery ? 6 : Math.min(6, Math.max(3, lv.items.length * 2));
+  return {
+    pool,
+    earlier,
+    length: lv.quiz || defaultLength,
+    options: Math.min(mastery ? 3 : 2, pool.length + earlier.length), // ⭐/⭐⭐: 2 choices, ⭐⭐⭐: 3
+  };
+}
+
+function makeReadQuiz(i) {
+  const lv = LEVEL_DATA[i];
+  const { pool, earlier, length, options } = readQuizSize(i);
   const quiz = {
     kind: 'text',
     pool,
-    focus: mastery && lv.items.length ? lv.items : pool,
+    focus: lv.stars === 3 && lv.items.length ? lv.items : pool,
     extras: earlier,
-    length: lv.quiz || defaultLength,
-    options: Math.min(mastery ? 3 : 2, pool.length + earlier.length), // ⭐/⭐⭐: 2 choices, ⭐⭐⭐: 3
+    length,
+    options,
     weight: () => 1,
     results: [],
     last: null,
@@ -1276,11 +1365,27 @@ function renderChoice(quiz) {
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="quiz">
-      <div class="dots">${dots}</div>
+      <div class="q-bubble"><span class="q-tip"></span><div class="dots">${dots}</div></div>
       <button class="listen-btn" data-action="listen" aria-label="${T.listen}">${icon('volume')}</button>
       <div class="options" style="--cols:${cols}">${options}</div>
     </div>`;
+  placeBubbleTip();
 }
+
+// The questions of a step sit in a rounded box under the step dots; its little
+// tip points up at the current step's dot.
+function placeBubbleTip() {
+  const now = $app.querySelector('.dots.steps i.now');
+  const bubble = $app.querySelector('.q-bubble');
+  if (!now || !bubble) return;
+  const a = now.getBoundingClientRect();
+  const b = bubble.getBoundingClientRect();
+  const x = Math.min(b.width - 22, Math.max(22, a.left + a.width / 2 - b.left));
+  bubble.querySelector('.q-tip').style.left = x + 'px';
+}
+window.addEventListener('resize', placeBubbleTip);
+
+
 
 const currentQuiz = () => (stepName() === 'find' ? lesson.find : lesson.rq);
 const stillHere = (l, step) => lesson === l && l.step === step && currentPath() === '/level/' + l.level;
@@ -1329,7 +1434,7 @@ function makePair(i) {
   const pool = lettersUpTo(i);
   const fresh = LEVEL_DATA[i].letters;
   const lv = LEVEL_DATA[i];
-  const count = lv.stars === 1 && letterRank(i) < 3 ? 2 : 3; // ⭐ of i, s, u: 2 pairs, otherwise 3
+  const count = pairCount(i);
   let chosen = lv.stars === 3
     ? shuffle(pool).slice(0, count)                                       // ⭐⭐⭐: any letters so far
     : [...fresh, ...shuffle(pool.filter(l => !fresh.includes(l)))].slice(0, count);
@@ -1476,7 +1581,7 @@ function matchWords(i) {
     return shuffle(all).slice(0, 3);
   }
   if (!fresh.length) return [];
-  const count = letterRank(i) < 3 && LEVEL_DATA[i].stars === 1 ? 2 : 3;
+  const count = pairCount(i);
   const earlier = [];
   for (let k = i - 1; k >= 0; k--) {
     for (const w of LEVEL_DATA[k].words) if (wordPicture(w) && !fresh.includes(w) && !earlier.includes(w)) earlier.push(w);
@@ -1551,7 +1656,9 @@ function renderRead() {
   const pictures = typeof WORD_PICTURES === 'object' ? WORD_PICTURES : {};
   const tiles = (list, withPictures) => list.map(t => {
     const pic = withPictures && pictures[t];
-    return `<button class="read-btn${pic ? ' with-pic' : ''}" data-action="readItem" data-value="${t}">${pic ? pictureHTML(pic) : ''}<span>${markLevelLetter(t, true)}</span><span class="corner">${icon('volume')}</span></button>`;
+    // under the syllable or word, the letters it is made of: nu → n + u
+    const parts = presentParts(t).map(p => `<span class="p">${markLevelLetter(p, true)}</span>`).join('<i>+</i>');
+    return `<button class="read-btn${pic ? ' with-pic' : ''}" data-action="readItem" data-value="${t}">${pic ? pictureHTML(pic) : ''}<span class="w">${markLevelLetter(t, true)}</span><span class="parts">${parts}</span><span class="corner">${icon('volume')}</span></button>`;
   }).join('');
   $app.innerHTML = `
     ${levelTopBar()}
@@ -1565,24 +1672,51 @@ function renderRead() {
     </div>`;
 }
 
-// Says every syllable, then every word, in order, lighting up each tile.
+// Presents one syllable or word: each part's sound, then the whole – s… u… su, or Ma… nu… Manu.
+// The part being said lights up in the small line under the word; while the whole is said,
+// the big word itself turns blue.
+async function presentItem(text, token) {
+  const btn = [...$app.querySelectorAll('.read-btn')].find(b => b.dataset.value === text);
+  const spans = btn ? [...btn.querySelectorAll('.parts .p')] : [];
+  const light = on => spans.forEach((p, j) => p.classList.toggle('on', j === on));
+  if (btn) btn.classList.add('playing');
+  const parts = presentParts(text);
+  for (let k = 0; k < parts.length && token === playToken; k++) {
+    light(k);
+    const sound = partSound(parts[k]);
+    if (sound) await playAndWait(sound.key, sound.text, token);
+    if (token === playToken) await pause(250);
+  }
+  if (token === playToken) {
+    light(-1);
+    if (btn) btn.classList.add('whole'); // the big word above turns blue
+    await pause(150);
+    await playAndWait(textKey(text), text, token);
+  }
+  light(-1);
+  if (btn) btn.classList.remove('playing', 'whole');
+}
+
+function presentOne(text) {
+  stopSound();
+  $app.querySelectorAll('.read-btn').forEach(b => b.classList.remove('playing', 'whole'));
+  $app.querySelectorAll('.parts .p.on').forEach(p => p.classList.remove('on'));
+  presentItem(text, playToken);
+}
+
+// Presents every syllable, then every word, in order.
 async function readAllAloud() {
   stopSound();
   const token = playToken;
   const here = lesson;
   const level = LEVEL_DATA[lesson.level];
-  const mark = (text, on) => {
-    $app.querySelectorAll('.read-btn').forEach(b => b.classList.toggle('playing', on && b.dataset.value === text));
-  };
   await pause(300);
   for (const text of [...level.syllables, ...level.words]) {
     if (token !== playToken || lesson !== here || stepName() !== 'read') break;
-    mark(text, true);
-    await playAndWait(textKey(text), text, token);
+    await presentItem(text, token);
     if (token !== playToken) break;
-    await pause(450);
+    await pause(600);
   }
-  mark(null, false);
 }
 
 // A word picture: an emoji, or an image file (e.g. 'pictures/mai.svg').
@@ -1629,7 +1763,7 @@ function allSoundKeys() {
     keys.add(letterKey(l));
     if (l.word) keys.add(textKey(l.word));
   });
-  LEVEL_DATA.forEach(level => level.items.forEach(t => keys.add(textKey(t))));
+  LEVEL_DATA.forEach(level => [...level.items, ...splitSyllables(level.items)].forEach(t => keys.add(textKey(t))));
   return keys;
 }
 
@@ -1647,6 +1781,7 @@ function renderSettings() {
         <p>${T.levelsHelp(doneCount(), LEVEL_DATA.length)}</p>
         <div class="switch-row"><span>${T.unlockAll}</span><button class="switch${settings.unlockAll ? ' on' : ''}" data-action="toggleUnlock" role="switch" aria-checked="${settings.unlockAll}" aria-label="${T.unlockAll}"></button></div>
         <div class="switch-row"><span>${T.testMode}</span><button class="switch${settings.testMode ? ' on' : ''}" data-action="toggleTest" role="switch" aria-checked="${settings.testMode}" aria-label="${T.testMode}"></button></div>
+        <button class="text-btn" data-action="go" data-value="/prezentare">${icon('steps')}${T.openOverview}</button>
         <button class="text-btn danger" data-action="resetProgress">${icon('refresh')}${T.resetProgress}</button>
       </section>
       <section>
@@ -1660,6 +1795,56 @@ function renderSettings() {
         ${hasSpeech ? `<button class="text-btn" data-action="testVoice">${icon('volume')}${T.test}</button>` : ''}
       </section>
       <p class="version">Bibcit 0.3</p>
+    </div>`;
+}
+
+/* ---------- Overview of the levels (for the teacher) ----------
+   Made from letters.js and the same rules the exercises use, so it is always up to date. */
+function overviewText(text, letters) {
+  return [...text].map(ch => (letters.includes(ch.toLocaleLowerCase('ro')) ? `<mark>${ch}</mark>` : ch)).join('');
+}
+
+function renderOverview() {
+  let grand = 0;
+  const cards = LEVEL_DATA.map((lv, i) => {
+    const steps = levelSteps(i);
+    const own = lv.letters.map(l => l.lower);
+    const rows = [];
+    const add = (label, count, note = '') => {
+      rows.push(`<tr><td>${label}${note ? `<small>${note}</small>` : ''}</td><td class="num">${count}</td></tr>`);
+      return count;
+    };
+    let total = 0;
+    if (steps.includes('learn')) rows.push(`<tr><td>${T.ovLearn}</td><td class="num">–</td></tr>`);
+    total += add(T.ovTrace, lv.letters.length * 2, lv.letters.map(l => `${l.upper}, ${l.lower}`).join(' · '));
+    const fresh = findFresh(i);
+    total += add(T.ovFind, findLength(i), fresh === findLength(i) ? T.ovAllNew(own.join(' ')) : T.ovSomeNew(fresh, own.join(' ')));
+    total += add(T.ovPair, pairCount(i), lv.stars === 3 ? T.ovAnyLetters : '');
+    if (steps.includes('read')) total += add(T.ovRead, lv.items.length);
+    if (steps.includes('readquiz')) {
+      const rq = readQuizSize(i);
+      total += add(T.ovQuiz, rq.length, T.ovChoices(rq.options) + (lv.stars === 3 ? ` · ${T.ovAllSoFar}` : ''));
+    }
+    if (steps.includes('match')) total += add(T.ovMatch, matchWords(i).length, lv.stars === 3 ? T.ovAllSoFar : '');
+    grand += total;
+
+    const items = lv.items.map(t => {
+      const pic = wordPicture(t);
+      const picHTML = !pic ? '' : isImageFile(pic) ? `<img src="${pic}" alt="">` : `<span>${pic}</span>`;
+      return `<span class="ov-item">${picHTML}${overviewText(t, own)}</span>`;
+    }).join('');
+    return `<section class="ov-level${isDone(i) ? ' done' : ''}">
+      <h2><span>${levelName(i)}</span><span class="ov-pass">${Math.round(passRatio(i) * 100)}%</span></h2>
+      <div class="ov-items">${items || `<span class="ov-none">${T.ovNoNew}</span>`}</div>
+      <table>${rows.join('')}<tr class="ov-total"><td>${T.ovTotal}</td><td class="num">${total}</td></tr></table>
+    </section>`;
+  }).join('');
+
+  $app.innerHTML = `
+    ${topBar({ left: backButton('/settings'), title: T.overview })}
+    <div class="settings overview">
+      <section><p>${T.overviewHelp(LEVEL_DATA.length, grand)}</p></section>
+      ${cards}
     </div>`;
 }
 
@@ -1695,6 +1880,7 @@ function recorderRows() {
       rows.push(...letterRows(l));
     });
     level.items.forEach(t => rows.push({ key: textKey(t), text: t }));
+    splitSyllables(level.items).forEach(t => rows.push({ key: textKey(t), text: t, note: T.recSplit }));
     sections.push({ title: levelName(i), rows });
   });
   const others = LETTERS.filter(l => !inLevels.has(l)).flatMap(letterRows);
@@ -1877,10 +2063,7 @@ const actions = {
   pickMatch: value => { stopPairDemo(); pickMatch(value); },
   pairDemo: () => playPairDemo(),
   matchVoice: () => playVoice('match'),
-  readItem(value) {
-    $app.querySelectorAll('.read-btn.playing').forEach(b => b.classList.remove('playing'));
-    playText(value);
-  },
+  readItem: value => presentOne(value), // s… u… su
   readAll: () => readAllAloud(),
   nextStep: () => nextStep(),
   retry() {

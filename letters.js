@@ -63,7 +63,7 @@ const LETTERS = [
 //               if left out: ⭐ 4, ⭐⭐ twice the new syllables/words (3 to 6), ⭐⭐⭐ 6
 //   syllables : NEW syllables to read and hear (only letters learned so far)
 //   words     : NEW short words to read and hear (only letters learned so far)
-// At most 4 new syllables and words together per level.
+// At most 2 new syllables and words together per level.
 // Leave syllables / words empty ([]) when there are none.
 
 const LEVELS = [
@@ -81,12 +81,12 @@ const LEVELS = [
   { letters: 'm', stars: 3, syllables: ['im'],                     words: [] },
 
   { letters: 'a', stars: 1, syllables: ['ma', 'sa'],               words: [] },
-  { letters: 'a', stars: 2, syllables: ['am', 'as'],               words: ['mai', 'mama'] },
-  { letters: 'a', stars: 3, syllables: [],                         words: ['ai', 'sau', 'ia'] },
+  { letters: 'a', stars: 2, syllables: ['am'],                     words: ['mama'] },
+  { letters: 'a', stars: 3, syllables: [],                         words: ['ai', 'sau'] },
 
-  { letters: 'n', stars: 1, syllables: ['na', 'nu', 'ni', 'in'],   words: [] },
-  { letters: 'n', stars: 2, syllables: ['an', 'un'],               words: ['nas', 'Ana'] },
-  { letters: 'n', stars: 3, syllables: [],                         words: ['una', 'sun', 'unu', 'Manu'] },
+  { letters: 'n', stars: 1, syllables: ['nu', 'un'],               words: [] },
+  { letters: 'n', stars: 2, syllables: [],                         words: ['nas', 'Ana'] },
+  { letters: 'n', stars: 3, syllables: [],                         words: ['sun', 'Manu'] },
 ];
 
 // ---------------------------------------------------------------------
