@@ -240,6 +240,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   white-space: nowrap;   /* never split a word: confusing for a new reader */
 }
 mark { background: none; color: var(--mark); }
+.option.correct mark, .pair-btn.correct mark, .pair-btn.demo-ok mark { color: inherit; } /* white on green */
 
 .nav-row { margin-top: auto; display: flex; gap: 12px; padding-top: 8px; }
 .nav-btn {
@@ -253,6 +254,8 @@ mark { background: none; color: var(--mark); }
 }
 .nav-btn .icon { width: 44px; height: 44px; stroke-width: 2.8; }
 .nav-btn.primary { flex: 3; background: var(--accent); color: var(--accent-ink); }
+.nav-btn.primary.finish { background: var(--good); color: #fff; }
+.nav-btn.primary.finish:disabled { background: var(--line); color: var(--muted); opacity: 1; box-shadow: none; }
 .nav-btn:disabled { opacity: .3; }
 .nav-btn:active:not(:disabled) { transform: scale(.97); }
 
@@ -270,9 +273,16 @@ mark { background: none; color: var(--mark); }
   font-size: 3.6rem;
   font-weight: 700;
 }
-.plus { font-size: .6em; margin-left: .05em; align-self: flex-start; color: var(--accent); }
-.level.locked .plus { color: inherit; }
 .level.multi { font-size: 2.4rem; }
+/* levels map with stars: one row per letter, 3 columns (⭐ ⭐⭐ ⭐⭐⭐) */
+.level-grid.stars-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stars-grid .level { aspect-ratio: .9; font-size: clamp(2.2rem, 11vw, 3rem); padding-bottom: 18px; }
+.stars-grid .level .badge { top: 5px; right: 5px; width: 28px; height: 28px; }
+.stars-grid .level .badge .icon { width: 16px; height: 16px; }
+.level .stars { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: .95rem; letter-spacing: 1px; line-height: 1; }
+.level.locked .stars { opacity: .45; filter: grayscale(1); }
+.next-level { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.next-level .stars { font-size: 1.6rem; letter-spacing: 3px; line-height: 1; }
 .level.multi3 { font-size: 1.7rem; }
 .level .num { position: absolute; top: 8px; left: 14px; font-size: 1.2rem; color: var(--muted); }
 .level .badge {
@@ -296,6 +306,19 @@ mark { background: none; color: var(--mark); }
 }
 .level:active:not(.locked) { transform: scale(.96); }
 
+.step-jump { display: flex; align-items: center; gap: 6px; }
+.jump-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  color: var(--accent);
+}
+.jump-btn .icon { width: 28px; height: 28px; stroke-width: 3; }
+.jump-btn:disabled { opacity: .3; }
 .level-label {
   display: flex;
   flex-direction: column;
@@ -336,25 +359,26 @@ mark { background: none; color: var(--mark); }
 }
 .trace-guide, .trace-demo { pointer-events: none; }
 .trace-canvas { touch-action: none; cursor: crosshair; }
-.trace-msg {
+.trace-result {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 12px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: var(--bg);
-  color: var(--ink);
-  font-size: 1.05rem;
-  line-height: 1.35;
-  text-align: center;
+  top: 50%;
+  left: 50%;
+  width: 150px;
+  height: 150px;
+  margin: -75px 0 0 -75px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
   pointer-events: none;
   opacity: 0;
-  transition: opacity .2s;
+  transform: scale(.6);
+  transition: opacity .15s, transform .15s;
 }
-.trace-msg.show { opacity: .95; }
-.trace-msg.good { background: var(--good); color: #fff; font-size: 1.4rem; font-weight: 700; }
-.trace-msg.bad { background: var(--bad-soft); color: var(--bad); font-weight: 700; }
+.trace-result.show { opacity: .95; transform: scale(1); }
+.trace-result.good { background: var(--good); }
+.trace-result.bad { background: var(--bad); }
+.trace-result .icon { width: 96px; height: 96px; stroke-width: 3.2; }
 .finger { font-size: 2.2rem; line-height: 1; }
 
 /* ---------- find / choose ---------- */
@@ -379,6 +403,8 @@ mark { background: none; color: var(--mark); }
   box-shadow: var(--shadow);
 }
 .listen-btn .icon { width: 84px; height: 84px; }
+.listen-btn.small { width: 96px; height: 96px; margin: 4px auto 0; flex: none; }
+.listen-btn.small .icon { width: 50px; height: 50px; }
 .listen-btn:active { transform: scale(.95); }
 .options {
   width: 100%;
@@ -404,7 +430,18 @@ mark { background: none; color: var(--mark); }
 .option.wrong { background: var(--bad-soft); color: var(--bad); opacity: .6; }
 
 /* ---------- pair big and small letters ---------- */
-.pair { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-content: center; }
+.pair { position: relative; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-content: center; }
+.pair-demo { z-index: 2; }
+.top-buttons { display: flex; justify-content: center; gap: 18px; }
+.top-buttons .listen-btn.small { margin: 4px 0 0; }
+.listen-btn.demo { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+.listen-btn.demo .finger { font-size: 2.6rem; }
+.pair-demo { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; }
+.pair-demo.show { opacity: 1; }
+.demo-finger { position: absolute; left: 0; top: 0; font-size: 3.2rem; line-height: 1; margin: -6px 0 0 -18px; will-change: transform; }
+.pair-btn.demo { border-color: var(--accent); background: var(--accent-soft); }
+.pair-btn.demo-ok { background: var(--good); color: #fff; border-color: transparent; }
+.demo-finger { transition: none; transform-origin: 30% 10%; }
 .pair-col { display: flex; flex-direction: column; gap: 14px; }
 .pair-btn {
   height: clamp(84px, 14vh, 120px);
@@ -418,6 +455,10 @@ mark { background: none; color: var(--mark); }
 }
 .pair-btn.selected { border-color: var(--accent); background: var(--accent-soft); }
 .pair-btn.correct { background: var(--good); color: #fff; opacity: .55; }
+.match-btn { font-size: clamp(1.8rem, 9vw, 2.6rem); }
+.match-btn.picture { display: grid; place-items: center; }
+.match-btn .pic { font-size: clamp(2.6rem, 13vw, 3.4rem); line-height: 1; }
+.match-btn .pic-img { width: clamp(60px, 18vw, 84px); height: clamp(60px, 18vw, 84px); object-fit: contain; border-radius: 8px; pointer-events: none; }
 
 /* ---------- syllables and words ---------- */
 .section { margin: 4px 0 0; font-size: 1.1rem; color: var(--muted); }
@@ -431,6 +472,13 @@ mark { background: none; color: var(--mark); }
   font-weight: 700;
 }
 .read-btn:active { transform: scale(.96); background: var(--accent-soft); }
+.read-btn { position: relative; border: 4px solid transparent; }
+.read-btn .corner { position: absolute; top: 8px; right: 10px; display: flex; color: var(--accent); }
+.read-btn .corner .icon { width: 22px; height: 22px; }
+.read-btn.playing { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.03); transition: transform .15s; }
+.read-btn.with-pic { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px 0; }
+.read-btn .pic { font-size: clamp(2.2rem, 11vw, 3rem); line-height: 1; }
+.read-btn .pic-img { width: clamp(64px, 21vw, 92px); height: clamp(64px, 21vw, 92px); object-fit: contain; border-radius: 8px; pointer-events: none; }
 
 /* ---------- result ---------- */
 .results {
@@ -535,6 +583,7 @@ mark { background: none; color: var(--mark); }
   .rec-btn .lbl { display: none; }
   .rec-btn { padding: 0; width: 48px; }
 }
+.rec-text.sentence { font-size: 1.15rem; white-space: normal; }
 .rec-text small { display: block; font-size: .9rem; font-weight: 400; color: var(--muted); }
 .rec-btn {
   height: 48px;

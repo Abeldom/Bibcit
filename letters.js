@@ -48,26 +48,63 @@ const LETTERS = [
 // ---------------------------------------------------------------------
 // 2. LEVELS ("Niveluri"), in the order they are taught
 // ---------------------------------------------------------------------
-// One block = one level. A level opens when the level before it is passed.
+// One block = one level. Each letter has up to 3 levels, shown with stars:
+//   ⭐   introduction: learn the letter (with an example word), first exercises
+//   ⭐⭐  practice: no introduction page, more questions
+//   ⭐⭐⭐ mastery: mixes everything learned so far, more choices (extra, not required)
+// A letter's ⭐⭐ opens after its ⭐, its ⭐⭐⭐ after its ⭐⭐.
+// The NEXT letter opens after ⭐⭐ (or after ⭐ for a letter that has only ⭐).
+//
 //   letters   : the letter(s) of this level ('m', or 'm n' for two)
-//   practice  : true = the second, harder level of the same letter
-//               (no "learn" screen; shown as "Mm+")
-//   find      : how many questions in "find the letter by its sound"
+//   stars     : 1, 2 or 3 (see above)
+//   find      : (optional) questions in "find the letter by sound";
+//               if left out: ⭐ 4, ⭐⭐ 5, ⭐⭐⭐ 6
+//   quiz      : (optional) questions in the syllable quiz;
+//               if left out: ⭐ 4, ⭐⭐ twice the new syllables/words (3 to 6), ⭐⭐⭐ 6
 //   syllables : NEW syllables to read and hear (only letters learned so far)
 //   words     : NEW short words to read and hear (only letters learned so far)
+// At most 4 new syllables and words together per level.
 // Leave syllables / words empty ([]) when there are none.
 
 const LEVELS = [
-  { letters: 'i', find: 4, syllables: [],                         words: [] },
-  { letters: 's', find: 6, syllables: ['si', 'is'],               words: [] },
-  { letters: 'u', find: 4, syllables: [],                         words: ['sus', 'Isus'] },
+  { letters: 'i', stars: 1, syllables: [],                         words: [] },
 
-  { letters: 'm', find: 4, syllables: ['mi', 'mu'],               words: [] },
-  { letters: 'm', find: 6, syllables: ['im', 'um'],               words: ['mii'],                       practice: true },
+  { letters: 's', stars: 1, syllables: ['si', 'is'],               words: [] },
+  { letters: 's', stars: 2, syllables: ['si', 'is'],               words: [] },  // no other syllables possible yet: repeats
 
-  { letters: 'a', find: 4, syllables: ['ma', 'sa'],               words: [] },
-  { letters: 'a', find: 8, syllables: ['am', 'as'],               words: ['ai', 'mai', 'mama'],         practice: true },
+  { letters: 'u', stars: 1, syllables: [],                         words: ['sus', 'Isus'] },
+  { letters: 'u', stars: 2, quiz: 4, syllables: ['su', 'us'],      words: [] },
+  { letters: 'u', stars: 3, syllables: [],                         words: [] },  // nothing new possible: the quiz mixes all earlier ones
 
-  { letters: 'n', find: 4, syllables: ['na', 'nu'],               words: [] },
-  { letters: 'n', find: 8, syllables: ['ni', 'in', 'an', 'un'],   words: ['nas', 'Ana', 'una', 'sun'],  practice: true },
+  { letters: 'm', stars: 1, syllables: ['mi', 'mu'],               words: [] },
+  { letters: 'm', stars: 2, quiz: 4, syllables: ['um'],            words: ['mii'] },
+  { letters: 'm', stars: 3, syllables: ['im'],                     words: [] },
+
+  { letters: 'a', stars: 1, syllables: ['ma', 'sa'],               words: [] },
+  { letters: 'a', stars: 2, syllables: ['am', 'as'],               words: ['mai', 'mama'] },
+  { letters: 'a', stars: 3, syllables: [],                         words: ['ai', 'sau', 'ia'] },
+
+  { letters: 'n', stars: 1, syllables: ['na', 'nu', 'ni', 'in'],   words: [] },
+  { letters: 'n', stars: 2, syllables: ['an', 'un'],               words: ['nas', 'Ana'] },
+  { letters: 'n', stars: 3, syllables: [],                         words: ['una', 'sun', 'unu', 'Manu'] },
 ];
+
+// ---------------------------------------------------------------------
+// 3. PICTURES for the words in the levels (shown on the words screen)
+// ---------------------------------------------------------------------
+// Write the word exactly as in LEVELS. The picture is an emoji, or an image
+// file in the pictures/ folder. A word without a picture here is shown without one.
+
+const WORD_PICTURES = {
+  // "ai" has no picture on purpose.
+  sus:  '⬆️',                 // up
+  Isus: 'pictures/isus.jpg',  // icon of Christ Pantocrator, Russian, 19th century (public domain,
+                               // Wikimedia Commons: File:Christ_Pantocrator_Russian_icon.jpg)
+  mii:  'pictures/mii.svg',   // thousands: 1000 and coins (drawn for Bibcit)
+  mai:  'pictures/mai.svg',   // the month of May: a calendar page (drawn for Bibcit)
+  mama: '👩‍👧',                // mother and child
+  nas:  '👃',                 // nose
+  Ana:  '👧',                 // a girl's name
+  una:  '1️⃣',                 // one
+  sun:  '📞',                 // I call (on the phone)
+};
