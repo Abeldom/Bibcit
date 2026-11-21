@@ -7,6 +7,13 @@
   <meta name="description" content="Învață alfabetul românesc">
   <meta name="theme-color" content="#F7F4EE" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#15171A" media="(prefers-color-scheme: dark)">
+  <script>
+    // Light or dark mode chosen in Setări, set before the page is drawn (no flash).
+    try {
+      var t = (JSON.parse(localStorage.getItem('bibcit.settings') || '{}') || {}).theme;
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">

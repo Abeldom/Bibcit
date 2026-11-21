@@ -12,7 +12,9 @@
 const FIND_LENGTH = 10;     // most questions in the "find the letter" step
 const MAX_OPTIONS = 4;      // most letters to choose from (first 2, then 3, then 4)
 const PASS_RATIO = { 1: 0.8, 2: 0.85, 3: 0.9 }; // right on the first try needed to pass: ⭐ 80%, ⭐⭐ 85%, ⭐⭐⭐ 90%
-const FIND_BY_STARS = { 1: 4, 2: 5, 3: 6 };      // "find the letter" questions, unless a level sets its own
+const FIND_BY_STARS = { 1: 4, 2: 5, 3: 6 };
+const PRACTICE_LENGTH = 12;     // questions in "Exersează" (letters by sound + syllables/words)
+const PRACTICE_TEXT = 5;         // of which syllables and words (when enough are learned)      // "find the letter" questions, unless a level sets its own
 const MAX_NEW_ITEMS = 2;    // most new syllables + words in one level (more gives a warning in the console)
 const MAX_REC_SECONDS = 4;  // a recording stops by itself after this
 
@@ -54,6 +56,13 @@ const T = {
   recSplit: 'silabă din cuvântul despărțit',
   otherLetters: 'Alte litere (pentru alfabet)',
   instructions: 'Instrucțiuni (vocea ta)',
+  practice: 'Exersează',
+  theme: 'Aspect',
+  themeLight: 'Luminos',
+  themeDark: 'Întunecat',
+  themeAuto: 'Automat',
+  difficulty: 'dificultate',
+  practiceLocked: 'Exersarea se deschide după primul nivel trecut.',
   overview: 'Prezentare niveluri',
   openOverview: 'Prezentarea nivelurilor',
   overviewHelp: (n, total) => `${n} niveluri, ${total} sarcini în total. Litera nivelului este roșie. Procentul arată cât trebuie să fie corect din prima încercare.`,
@@ -113,13 +122,37 @@ const store = {
   },
 };
 
-const settings = Object.assign({ unlockAll: false, testMode: false }, store.get('bibcit.settings', {}));
+const settings = Object.assign({ unlockAll: false, testMode: false, theme: 'auto' }, store.get('bibcit.settings', {}));
+
+// Light / dark mode: 'light', 'dark', or 'auto' (follow the phone).
+function applyTheme() {
+  const root = document.documentElement;
+  if (settings.theme === 'light' || settings.theme === 'dark') root.dataset.theme = settings.theme;
+  else delete root.dataset.theme;
+  // the phone's status bar colour follows the page
+  const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    if (settings.theme === 'auto') m.setAttribute('content', m.media.includes('dark') ? '#15171A' : '#F7F4EE');
+    else m.setAttribute('content', bg);
+  });
+}
+applyTheme();
 let progress = Object.assign({ done: {}, results: {} }, store.get('bibcit.progress', {}));
 
 const saveSettings = () => store.set('bibcit.settings', settings);
 const saveProgress = () => store.set('bibcit.progress', progress);
 
 const recentResults = l => (progress.results[l.lower] || []).slice(-5);
+// How well a letter is known, from its last 5 answers in "find the letter by sound"
+// (1 = asked and tapped right on the first try; 0 = asked but needed more tries, or tapped by mistake):
+//   0 not practised yet · 1 learning (under 60% right) · 2 almost (60–79%) · 3 known (80%+, at least 4 answers)
+function letterKnowledge(l) {
+  const r = recentResults(l);
+  if (!r.length) return 0;
+  const ratio = r.filter(Boolean).length / r.length;
+  if (ratio >= 0.8 && r.length >= 4) return 3;
+  return ratio >= 0.6 ? 2 : 1;
+}
 
 /* ---------- Letters and levels ---------- */
 const BY_LOWER = new Map(LETTERS.map(l => [l.lower, l]));
@@ -420,8 +453,25 @@ const VOICE = {
   good: { key: 'V_good', text: 'Bravo!' },
   again: { key: 'V_again', text: 'Mai încearcă o dată.' },
   match: { key: 'V_match', text: 'Formează perechi din imagini și cuvinte.' },
+  find: { key: 'V_find', text: 'Ascultă și apasă pe litera pe care o auzi.' },
 };
 const playVoice = (name, delay) => playKey(VOICE[name].key, VOICE[name].text, false, delay);
+
+// A sound button sends out soft waves when it is pressed, and also when its sound
+// plays by itself (at the start of a task, or again after a wrong answer).
+function rippleSound(b = $app.querySelector('.listen-btn:not(.demo)'), delay = 0) {
+  if (!b) return;
+  const start = () => {
+    b.classList.remove('ripple');
+    void b.offsetWidth; // restart the animation
+    b.classList.add('ripple');
+  };
+  if (delay) setTimeout(start, delay * 1000); else start();
+}
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest && e.target.closest('.listen-btn:not(.demo)');
+  if (b) rippleSound(b);
+});
 
 // Phones only allow sound after a tap: switch sound on with the first tap.
 document.addEventListener('click', () => {
@@ -461,6 +511,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
            #/levels        all levels             #/level/3    one level
            #/settings      #/inregistrare (recording page, laptop only)
            #/prezentare    overview of all levels (new words, number of tasks)
+           #/exercitiu     practice: 12 mixed questions on everything learned so far
    The back button on a page goes to its parent page; the phone's own back
    button behaves the same way. */
 const $app = document.getElementById('app');
@@ -502,6 +553,7 @@ function render(entering = false) {
   else if (path === '/settings') renderSettings();
   else if (path === '/inregistrare') renderRecorder();
   else if (path === '/prezentare') renderOverview();
+  else if (path === '/exercitiu') renderPractice(entering);
   else renderHome();
 }
 
@@ -527,7 +579,7 @@ const pairText = l => `${l.upper} ${l.lower}`; // "M m": a space between, never
 // The level's letter is shown in red inside syllables and words: always in ⭐ and ⭐⭐ levels;
 // in ⭐⭐⭐ only where the new syllables and words are presented (not in the exercises).
 function markLevelLetter(text, presenting = false) {
-  if (!lesson || (LEVEL_DATA[lesson.level].stars > 2 && !presenting)) return text;
+  if (!lesson || lesson.practice || (LEVEL_DATA[lesson.level].stars > 2 && !presenting)) return text;
   const letters = LEVEL_DATA[lesson.level].letters.map(l => l.lower);
   return [...text].map(ch => (letters.includes(ch.toLocaleLowerCase('ro')) ? `<mark>${ch}</mark>` : ch)).join('');
 }
@@ -560,10 +612,18 @@ function renderHome() {
   const done = doneCount();
   const total = LEVEL_DATA.length;
   const next = nextLevel();
-  const nextArt = next === -1
-    ? '🏆'
-    : `<span class="next-level"><span class="glyphs">${levelText(next)}</span><span class="stars">${stars(next)}</span></span>`;
-
+  // One line of 4 letters around where you are: the 2 last learned, the one being learned (big),
+  // and the next one. (Learned = the level that opens the next letter is passed.)
+  const groups = letterGroups();
+  const learned = g => isDone(g.levels.find(i => LEVEL_DATA[i].stars === 2) ?? g.levels[0]);
+  const cur = groups.findIndex(g => !learned(g));
+  const cell = (g, cls) => `<span class="${cls}">${levelText(g.levels[0])}</span>`;
+  // Always 4 when there are enough letters: near the start more coming letters, near the end more learned ones.
+  const SHOW = 4;
+  const from = cur === -1 ? 0 : Math.max(0, Math.min(cur - 2, groups.length - SHOW));
+  const miniMap = cur === -1
+    ? groups.slice(-(SHOW - 1)).map(g => cell(g, 'before')).join('') + '<span class="now">🏆</span>'
+    : groups.slice(from, from + SHOW).map((g, k) => cell(g, from + k < cur ? 'before' : from + k === cur ? 'now' : 'after')).join('');
   $app.innerHTML = `
     ${topBar({ title: 'Bibcit', right: iconButton('go', 'settings', T.settings, '/settings') })}
     <div class="home">
@@ -572,9 +632,12 @@ function renderHome() {
         <span class="label">${icon('grid')}<span>${T.alphabet}</span></span>
       </button>
       <button class="home-card levels-card" data-action="go" data-value="/levels">
-        <span class="art">${nextArt}</span>
+        <span class="art"><span class="mini-map">${miniMap}</span></span>
         <span class="label">${icon('steps')}<span>${T.levels}</span><span class="count">${done} / ${total}</span></span>
         <span class="progress"><i style="width:${total ? (done / total) * 100 : 0}%"></i></span>
+      </button>
+      <button class="home-card practice-card${done ? '' : ' locked'}" data-action="go" data-value="/exercitiu">
+        <span class="label"><span class="big">🔁</span><span>${T.practice}</span><span class="count">${PRACTICE_LENGTH}</span></span>
       </button>
     </div>`;
 }
@@ -584,11 +647,10 @@ let letterIndex = 0;
 
 function renderAlphabet() {
   const tiles = LETTERS.map((l, i) => {
-    const r = recentResults(l);
-    const filled = Math.round((r.filter(Boolean).length / 5) * 100);
+    const k = letterKnowledge(l); // shown as 3 small dots: ●○○ learning, ●●○ almost, ●●● known
     return `<button class="tile" data-action="openLetter" data-value="${i}" aria-label="${l.upper}">
       ${glyphs(l)}
-      ${r.length ? `<span class="meter"><i style="width:${filled}%"></i></span>` : ''}
+      ${k ? `<span class="know" aria-hidden="true">${[1, 2, 3].map(n => `<i${n <= k ? ' class="on"' : ''}></i>`).join('')}</span>` : ''}
     </button>`;
   }).join('');
   $app.innerHTML = `
@@ -687,7 +749,12 @@ function startLesson(i) {
 const stepName = () => lesson.steps[lesson.step];
 
 // The level's name at the top.
-const levelHeader = () => `<div class="level-label">${levelText(lesson.level)} <span class="stars">${stars(lesson.level)}</span></div>`;
+const levelHeader = () => (lesson.practice
+  ? `<div class="level-label">🔁 ${T.practice}</div>`
+  : `<div class="level-label">${levelText(lesson.level)}</div>`);
+// The level's stars, in the top right corner, labelled as its difficulty.
+const difficultyBadge = () => (lesson.practice ? ''
+  : `<div class="difficulty"><span class="stars">${stars(lesson.level)}</span><small>${T.difficulty}</small></div>`);
 
 // Test mode: go straight to exercise k of the level.
 function jumpToStep(k) {
@@ -715,14 +782,14 @@ function stepDots() {
   </div>`;
 }
 
-const levelTopBar = () => topBar({ left: backButton('/levels'), center: levelHeader() }) + stepDots();
+const levelTopBar = () => topBar({ left: backButton(lesson.practice ? '/' : '/levels'), center: levelHeader(), right: difficultyBadge() }) + stepDots();
 
 function renderLevel(i, entering) {
   if (!isOpen(i)) {
     toast(T.locked(levelName(requiredLevel(i))));
     return navigate('/levels', { replace: true });
   }
-  if (!lesson || lesson.level !== i) startLesson(i);
+  if (!lesson || lesson.practice || lesson.level !== i) startLesson(i);
   const name = stepName();
   if (name === 'learn') renderLearn();
   else if (name === 'trace') renderTrace();
@@ -742,6 +809,12 @@ function nextStep() {
   lesson.part = 0;
   const name = stepName();
   const i = lesson.level;
+  if (lesson.practice) {
+    if (name === 'result') finishLevel();
+    window.scrollTo(0, 0);
+    renderPractice(false);
+    return playStepStart();
+  }
   if (name === 'find') lesson.find = makeFindQuiz(i);
   if (name === 'pair') lesson.pair = makePair(i);
   if (name === 'match') lesson.match = makeMatch(i);
@@ -754,9 +827,11 @@ function nextStep() {
 
 function playStepStart() {
   const name = stepName();
+  // the sound starts by itself (in "find the letter" the waves wait for the letter's sound, not the instruction)
+  if (['readquiz', 'pair', 'match', 'read'].includes(name)) rippleSound();
   const letters = LEVEL_DATA[lesson.level].letters;
   if (name === 'learn') playLetter(letters[lesson.pos]);
-  if (name === 'find') playQuestion(lesson.find);
+  if (name === 'find') instructionThenQuestion('find', lesson.find);
   if (name === 'pair') { playVoice('pair'); setTimeout(() => { if (lesson && stepName() === 'pair') playPairDemo(); }, 700); }
   if (name === 'match') { playVoice('match'); setTimeout(() => { if (lesson && stepName() === 'match') playPairDemo(); }, 700); }
   if (name === 'read') readAllAloud();
@@ -1344,6 +1419,7 @@ function optionText(quiz, item) {
 
 function playQuestion(quiz, delay = 0) {
   const t = quiz.q.target;
+  rippleSound(undefined, delay);
   if (quiz.kind === 'text') playText(t, delay);
   else playLetter(t, delay);
 }
@@ -1365,7 +1441,7 @@ function renderChoice(quiz) {
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="quiz">
-      <div class="q-bubble"><span class="q-tip"></span><div class="dots">${dots}</div></div>
+      <div class="q-bubble"><span class="q-tip"></span><div class="dots${quiz.length > 6 ? ' many' : ''}">${dots}</div></div>
       <button class="listen-btn" data-action="listen" aria-label="${T.listen}">${icon('volume')}</button>
       <div class="options" style="--cols:${cols}">${options}</div>
     </div>`;
@@ -1387,8 +1463,27 @@ window.addEventListener('resize', placeBubbleTip);
 
 
 
+// Saves one answer for a letter (its last 10 are kept): how well it is known (Alfabetul dots)
+// and how often it is asked come from these.
+function recordLetter(l, right) {
+  const r = progress.results[l.lower] || [];
+  r.push(right ? 1 : 0);
+  progress.results[l.lower] = r.slice(-10);
+  saveProgress();
+}
+
+// At the start of a quiz: the spoken instruction first, then the first sound.
+async function instructionThenQuestion(name, quiz) {
+  stopSound();
+  const token = playToken;
+  await playAndWait(VOICE[name].key, VOICE[name].text, token);
+  if (token !== playToken || !lesson || currentQuiz() !== quiz) return;
+  await pause(350);
+  if (token === playToken) playQuestion(quiz);
+}
+
 const currentQuiz = () => (stepName() === 'find' ? lesson.find : lesson.rq);
-const stillHere = (l, step) => lesson === l && l.step === step && currentPath() === '/level/' + l.level;
+const stillHere = (l, step) => lesson === l && l.step === step && currentPath() === (l.practice ? '/exercitiu' : '/level/' + l.level);
 
 function answer(i, button) {
   const quiz = currentQuiz();
@@ -1402,12 +1497,7 @@ function answer(i, button) {
     q.done = true;
     button.classList.add('correct');
     soundRight();
-    if (quiz.kind === 'letter') {
-      const r = progress.results[q.target.lower] || [];
-      r.push(q.firstTry ? 1 : 0);
-      progress.results[q.target.lower] = r.slice(-10);
-      saveProgress();
-    }
+    if (quiz.kind === 'letter') recordLetter(q.target, q.firstTry); // the asked letter: right on the first try or not
     quiz.results.push(q.firstTry);
     lesson.total++;
     if (q.firstTry) lesson.right++;
@@ -1422,6 +1512,7 @@ function answer(i, button) {
   } else {
     q.firstTry = false;
     q.wrong.push(i);
+    if (quiz.kind === 'letter') recordLetter(q.options[i], false); // the letter tapped by mistake is not known well either
     button.classList.add('wrong', 'shake');
     button.disabled = true;
     soundWrong();
@@ -1550,6 +1641,7 @@ function pick(value, button) {
     p.sel = null;
     soundRight();
     renderPair();
+    markJustMatched([`L:${l.lower}`, `R:${l.lower}`]);
     if (p.matched.length === p.left.length) {
       const here = lesson;
       const step = lesson.step;
@@ -1565,6 +1657,14 @@ function pick(value, button) {
     const again = $app.querySelector(`[data-value="${value}"]`);
     if (again) again.classList.add('shake');
   }
+}
+
+// The two cards that were just paired turn green smoothly (the others are already green).
+function markJustMatched(values) {
+  values.forEach(v => {
+    const b = [...$app.querySelectorAll('.pair-btn')].find(el => el.dataset.value === v);
+    if (b) b.classList.add('just');
+  });
 }
 
 /* Last step: connect the picture with the word */
@@ -1634,6 +1734,7 @@ function pickMatch(value) {
     soundRight();
     playText(word, 0.3); // say the word as a reward
     renderMatch();
+    markJustMatched([`P:${word}`, `W:${word}`]);
     if (m.matched.length === m.left.length) {
       const here = lesson;
       const step = lesson.step;
@@ -1693,20 +1794,28 @@ async function presentItem(text, token) {
     await pause(150);
     await playAndWait(textKey(text), text, token);
   }
+  // Only tidy up if nothing new has started meanwhile (a new press restarts the effect itself).
+  if (token !== playToken) return;
   light(-1);
   if (btn) btn.classList.remove('playing', 'whole');
 }
 
-function presentOne(text) {
-  stopSound();
+// Switches every highlight off at once, so a new press starts the effect from the beginning.
+function clearPresentation() {
   $app.querySelectorAll('.read-btn').forEach(b => b.classList.remove('playing', 'whole'));
   $app.querySelectorAll('.parts .p.on').forEach(p => p.classList.remove('on'));
+}
+
+function presentOne(text) {
+  stopSound();
+  clearPresentation();
   presentItem(text, playToken);
 }
 
 // Presents every syllable, then every word, in order.
 async function readAllAloud() {
   stopSound();
+  clearPresentation();
   const token = playToken;
   const here = lesson;
   const level = LEVEL_DATA[lesson.level];
@@ -1725,8 +1834,62 @@ const pictureHTML = pic => (isImageFile(pic)
   ? `<img class="pic-img" src="${pic}" alt="" draggable="false">`
   : `<span class="pic">${pic}</span>`);
 
+/* ---------- Exersează: practice everything learned so far ----------
+   12 questions: letters by sound (the less known letters come up more often),
+   then syllables and words. Nothing is unlocked; it only shows how it went. */
+// The last level passed: everything up to it counts as learned (-1: none yet).
+function lastDoneLevel() {
+  for (let i = LEVEL_DATA.length - 1; i >= 0; i--) if (isDone(i)) return i;
+  return -1;
+}
+
+function startPractice() {
+  const base = lastDoneLevel();
+  const letters = lettersUpTo(base);
+  const items = itemsUpTo(base);
+  const textLength = items.length >= 2 ? PRACTICE_TEXT : 0;
+  const find = {
+    kind: 'letter',
+    pool: letters,
+    focus: letters,
+    extras: lettersAfter(base, letters),        // wrong choices while few letters are known
+    length: PRACTICE_LENGTH - textLength,
+    options: Math.min(MAX_OPTIONS, Math.max(3, letters.length)),
+    weight: letterWeight,
+    results: [], last: null, q: null,
+  };
+  nextQuestion(find);
+  let rq = null;
+  if (textLength) {
+    rq = { kind: 'text', pool: items, focus: items, extras: [], length: textLength,
+      options: Math.min(3, items.length), weight: () => 1, results: [], last: null, q: null };
+    nextQuestion(rq);
+  }
+  preloadSounds([...letters.map(letterKey), ...items.map(textKey), ...Object.values(VOICE).map(v => v.key)]);
+  lesson = { practice: true, level: base, steps: rq ? ['find', 'readquiz', 'result'] : ['find', 'result'],
+    step: 0, pos: 0, part: 0, right: 0, total: 0, find, rq, passed: false };
+}
+
+function renderPractice(entering) {
+  if (lastDoneLevel() < 0) {
+    toast(T.practiceLocked);
+    return navigate('/', { replace: true });
+  }
+  if (!lesson || !lesson.practice || entering) startPractice();
+  const name = stepName();
+  if (name === 'find') renderChoice(lesson.find);
+  else if (name === 'readquiz') renderChoice(lesson.rq);
+  else renderResult();
+  if (entering) playStepStart();
+}
+
 /* Result */
 function finishLevel() {
+  if (lesson.practice) { // practice opens nothing: it only shows how it went
+    lesson.passed = lesson.total > 0 && lesson.right / lesson.total >= 0.8;
+    if (lesson.passed) soundPassed();
+    return;
+  }
   lesson.passed = lesson.total > 0 && lesson.right / lesson.total >= passRatio(lesson.level);
   if (lesson.passed) {
     progress.done[levelKey(lesson.level)] = true;
@@ -1736,16 +1899,28 @@ function finishLevel() {
 }
 
 function renderResult() {
+  if (lesson.practice) {
+    $app.innerHTML = `
+      ${topBar({ left: backButton('/'), center: levelHeader() })}
+      <div class="results">
+        <div class="emoji">${lesson.passed ? '🎉' : '👍'}</div>
+        <div class="score">${lesson.right} / ${lesson.total}</div>
+        <div class="btn-row">
+          <button class="btn" data-action="up" data-value="/" aria-label="${T.back}">${icon('back')}</button>
+          <button class="btn primary" data-action="retry" aria-label="${T.again}">${icon('refresh')}</button>
+        </div>
+      </div>`;
+    return;
+  }
   const isLast = lesson.level === LEVEL_DATA.length - 1;
-  const emoji = lesson.passed ? (isLast ? '🏆' : '🎉') : '💪';
+  const emoji = lesson.passed ? (isLast ? '🏆' : '🎉') : '👍'; // not passed: good effort, try again
   const toLevels = `<button class="btn" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
   let buttons;
   if (!lesson.passed) {
-    buttons = `${toLevels}<button class="btn primary" data-action="retry">${icon('refresh')}<span>${T.again}</span></button>`;
-  } else if (!isLast) {
-    buttons = `${toLevels}<button class="btn primary" data-action="nextLevel"><span>${T.nextLevel}</span>${icon('right')}</button>`;
+    buttons = `${toLevels}<button class="btn primary" data-action="retry" aria-label="${T.again}">${icon('refresh')}</button>`;
   } else {
-    buttons = `<button class="btn primary" data-action="up" data-value="/levels">${icon('steps')}<span>${T.levels}</span></button>`;
+    // passed: back to the levels map (the next level is chosen there, not started automatically)
+    buttons = `<button class="btn primary" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
   }
   $app.innerHTML = `
     ${topBar({ left: backButton('/levels'), center: `<div class="level-label"><span>${levelName(lesson.level)}</span></div>` })}
@@ -1783,6 +1958,13 @@ function renderSettings() {
         <div class="switch-row"><span>${T.testMode}</span><button class="switch${settings.testMode ? ' on' : ''}" data-action="toggleTest" role="switch" aria-checked="${settings.testMode}" aria-label="${T.testMode}"></button></div>
         <button class="text-btn" data-action="go" data-value="/prezentare">${icon('steps')}${T.openOverview}</button>
         <button class="text-btn danger" data-action="resetProgress">${icon('refresh')}${T.resetProgress}</button>
+      </section>
+      <section>
+        <h2>${T.theme}</h2>
+        <div class="theme-row">
+          ${[['light', '☀️', T.themeLight], ['dark', '🌙', T.themeDark], ['auto', '📱', T.themeAuto]].map(([v, ico, label]) =>
+            `<button class="theme-btn${settings.theme === v ? ' on' : ''}" data-action="setTheme" data-value="${v}"><span class="ico">${ico}</span><span>${label}</span></button>`).join('')}
+        </div>
       </section>
       <section>
         <h2>${T.recordings}</h2>
@@ -2067,6 +2249,11 @@ const actions = {
   readAll: () => readAllAloud(),
   nextStep: () => nextStep(),
   retry() {
+    if (lesson.practice) { // a new practice round, with new questions
+      startPractice();
+      renderPractice(false);
+      return playStepStart();
+    }
     // Do the exercises again (without learning and tracing again).
     lesson.step = lesson.steps.indexOf('find') - 1;
     lesson.right = 0;
@@ -2087,6 +2274,12 @@ const actions = {
   },
   stepPrev: () => jumpToStep(lesson.step - 1),
   stepNext: () => jumpToStep(lesson.step + 1),
+  setTheme(value) {
+    settings.theme = value;
+    saveSettings();
+    applyTheme();
+    renderSettings();
+  },
   toggleUnlock() {
     settings.unlockAll = !settings.unlockAll;
     saveSettings();

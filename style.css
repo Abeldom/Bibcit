@@ -21,8 +21,28 @@
   color-scheme: light;
 }
 
+/* Dark colours: chosen in Setări (Întunecat), or following the phone when set to Automat. */
+:root[data-theme="dark"] {
+  --bg: #15171A;
+  --card: #23262B;
+  --ink: #F1F1EF;
+  --muted: #A2A7AD;
+  --line: #363A40;
+  --accent: #7AA2FF;
+  --accent-ink: #0E1420;
+  --accent-soft: #26324B;
+  --lit: #34528F;
+  --good: #4CC27A;
+  --bad: #FF7A63;
+  --bad-soft: #45251F;
+  --retry: #F0A63A;
+  --mark: #FF8A70;
+  --guide: #33373D;
+  --shadow: none;
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #15171A;
     --card: #23262B;
     --ink: #F1F1EF;
@@ -161,6 +181,15 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .home-card .label .icon { width: 38px; height: 38px; }
 .home-card .label .count { margin-left: auto; font-size: 1.3rem; opacity: .85; }
 .levels-card { background: var(--accent); color: var(--accent-ink); }
+/* Niveluri card: one line – 2 learned letters, the current one big, the next one faint */
+.mini-map { display: flex; align-items: baseline; justify-content: center; gap: .9em; white-space: nowrap; font-size: clamp(1.3rem, 6.5vw, 2rem); }
+.mini-map .before { opacity: .8; }
+.mini-map .now { font-size: 1.8em; }
+.mini-map .after { opacity: .35; }
+/* Exersează: a lower card under the two big ones */
+.home-card.practice-card { flex: none; min-height: 0; padding: 20px 22px; }
+.practice-card .big { font-size: 2.2rem; line-height: 1; }
+.practice-card.locked { opacity: .45; }
 .progress {
   display: block;
   height: 12px;
@@ -187,16 +216,10 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   overflow: hidden;
 }
 .tile:active { transform: scale(.95); }
-.meter {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 10px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--line);
-}
-.meter i { display: block; height: 100%; border-radius: inherit; background: var(--good); }
+/* how well the letter is known: 3 small dots (●○○ learning, ●●○ almost, ●●● known) */
+.know { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center; gap: 6px; }
+.know i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.know i.on { background: var(--good); }
 
 /* ---------- pages with a big letter ---------- */
 .page { flex: 1; display: flex; flex-direction: column; gap: 16px; }
@@ -335,6 +358,10 @@ mark { background: none; color: var(--mark); }
   white-space: nowrap;
 }
 .level-label .stars { font-size: .75em; letter-spacing: -.05em; }
+/* the level's stars in the top right corner, with the word "dificultate" under them */
+.difficulty { width: 60px; flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-right: 2px; line-height: 1; }
+.difficulty .stars { font-size: 1.05rem; letter-spacing: -.08em; white-space: nowrap; }
+.difficulty small { font-size: .72rem; color: var(--muted); }
 .dots.steps { margin: 4px 0 10px; }
 @media (max-width: 360px) { .level-label { font-size: 1.5rem; } }
 
@@ -407,6 +434,9 @@ mark { background: none; color: var(--mark); }
   border: 1.5px solid var(--line);
 }
 .q-bubble .dots { margin: 0; }
+.q-bubble .dots.many { gap: 8px; flex-wrap: nowrap; }   /* long rounds (Exersează): smaller dots on one line */
+.q-bubble .dots.many i { width: 14px; height: 14px; }
+.q-bubble .dots.many i.now { outline-width: 2px; outline-offset: 2px; }
 .q-tip {
   position: absolute;
   top: -9px;
@@ -443,7 +473,23 @@ mark { background: none; color: var(--mark); }
 .listen-btn .icon { width: 84px; height: 84px; }
 .listen-btn.small { width: 96px; height: 96px; margin: 4px auto 0; flex: none; }
 .listen-btn.small .icon { width: 50px; height: 50px; }
+/* pressed: the circle gives a soft bounce and sends out two waves */
+.listen-btn { position: relative; transition: transform .25s ease; }
 .listen-btn:active { transform: scale(.95); }
+.listen-btn.ripple { animation: breathe .65s ease-in-out; }
+.listen-btn.ripple::before, .listen-btn.ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  pointer-events: none;
+  z-index: -1;               /* behind the cards: the waves never cover another card */
+  animation: wave .75s ease-out forwards;
+}
+.listen-btn.ripple::after { animation-delay: .2s; opacity: 0; }
+@keyframes wave { from { transform: scale(1); opacity: .7; } to { transform: scale(1.35); opacity: 0; } }
+@keyframes breathe { 0% { transform: scale(1); } 30% { transform: scale(.93); } 65% { transform: scale(1.04); } 100% { transform: scale(1); } }
 .options {
   width: 100%;
   margin-top: auto;
@@ -452,20 +498,35 @@ mark { background: none; color: var(--mark); }
   gap: 14px;
 }
 .option {
-  aspect-ratio: 1.15;
+  aspect-ratio: 1.45;
   border-radius: var(--radius);
   background: var(--card);
   box-shadow: var(--shadow);
-  font-size: 5rem;
+  font-size: 4.2rem;
   font-weight: 700;
   line-height: 1;
 }
-.options[style*="--cols:3"] .option { font-size: 4rem; aspect-ratio: .85; }
+.options[style*="--cols:3"] .option { font-size: 3.4rem; aspect-ratio: 1.05; }
 .option.text { font-size: clamp(1.8rem, 10vw, 3rem); }
 .options[style*="--cols:3"] .option.text { font-size: clamp(1.5rem, 7vw, 2.4rem); }
 .option:active:not(:disabled) { transform: scale(.96); }
-.option.correct { background: var(--good); color: #fff; }
+.option { transition: background .35s ease, color .35s ease, opacity .35s ease; }
+.option.correct { background: var(--good); color: #fff; animation: turn-green .55s cubic-bezier(.3, .7, .3, 1); }
 .option.wrong { background: var(--bad-soft); color: var(--bad); opacity: .6; }
+/* a right answer turns green smoothly with a small swell (just under a second) */
+@keyframes turn-green {
+  0% { background: var(--card); color: var(--ink); transform: scale(1); }
+  45% { transform: scale(1.07); }
+  100% { background: var(--good); color: #fff; transform: scale(1); }
+}
+@keyframes pair-green {
+  0% { background: var(--accent-soft); color: var(--ink); transform: scale(1); }
+  45% { transform: scale(1.07); }
+  100% { background: var(--good); color: #fff; transform: scale(1); }
+}
+.pair-btn.correct.just { animation: pair-green .55s cubic-bezier(.3, .7, .3, 1); }
+.pair-btn.selected { animation: select-in .25s ease-out; }
+@keyframes select-in { from { background: var(--card); border-color: transparent; } }
 
 /* ---------- pair big and small letters ---------- */
 .pair { position: relative; flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-content: center; }
@@ -492,7 +553,7 @@ mark { background: none; color: var(--mark); }
   line-height: 1;
 }
 .pair-btn.selected { border-color: var(--accent); background: var(--accent-soft); }
-.pair-btn.correct { background: var(--good); color: #fff; opacity: .55; }
+.pair-btn.correct { background: var(--good); color: #fff; opacity: 1; } /* same green as a right answer */
 .match-btn { font-size: clamp(1.8rem, 9vw, 2.6rem); }
 .match-btn.picture { display: grid; place-items: center; }
 .match-btn .pic { font-size: clamp(2.6rem, 13vw, 3.4rem); line-height: 1; }
@@ -516,15 +577,16 @@ mark { background: none; color: var(--mark); }
 .read-btn .parts i { font-style: normal; margin: 0 .3em; opacity: .7; }
 /* while a letter is said, it lights up; then the whole word does */
 .read-btn .parts .p { display: inline-block; padding: 0 .15em; border-radius: 6px; transition: transform .12s, background .12s; }
+.read-btn:not(.playing) .p, .read-btn:not(.playing) .w { transition: none; } /* restart: switch off at once */
 .read-btn .parts .p.on { background: var(--lit); transform: scale(1.5); }
-.read-btn .w { display: inline-block; transition: transform .15s; }
+.read-btn .w { display: inline-block; }
 /* the whole syllable or word: the big word above gets the blue background */
-.read-btn .w { padding: 0 .2em; border-radius: 12px; transition: background .12s; }
-.read-btn.whole .w { background: var(--lit); }
+.read-btn .w { padding: 0 .2em; border-radius: 12px; transition: background .2s, transform .25s ease; }
+.read-btn.whole .w { background: var(--lit); transform: scale(1.2); } /* the whole syllable/word: blue and bigger */
 .read-btn { position: relative; border: 4px solid transparent; }
 .read-btn .corner { position: absolute; top: 8px; right: 10px; display: flex; color: var(--accent); }
 .read-btn .corner .icon { width: 22px; height: 22px; }
-.read-btn.playing { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.03); transition: transform .15s; }
+.read-btn.playing { border-color: var(--accent); background: var(--accent-soft); } /* the card itself does not grow: only the part being said does */
 .read-btn.with-pic { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px 0; }
 .read-btn .pic { font-size: clamp(2.2rem, 11vw, 3rem); line-height: 1; }
 .read-btn .pic-img { width: clamp(64px, 21vw, 92px); height: clamp(64px, 21vw, 92px); object-fit: contain; border-radius: 8px; pointer-events: none; }
@@ -601,6 +663,15 @@ mark { background: none; color: var(--mark); }
 }
 .switch.on { background: var(--accent); }
 .switch.on::after { transform: translateX(26px); }
+/* light / dark / automatic: three buttons side by side */
+.theme-row { display: flex; gap: 8px; }
+.theme-btn {
+  flex: 1; min-height: 56px; border-radius: 14px; background: var(--bg);
+  border: 3px solid transparent; font-size: 1.05rem; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.theme-btn .ico { font-size: 1.4rem; line-height: 1; }
+.theme-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 .text-btn {
   min-height: 52px;
   padding: 0 18px;
