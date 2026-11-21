@@ -12,9 +12,11 @@
 const FIND_LENGTH = 10;     // most questions in the "find the letter" step
 const MAX_OPTIONS = 4;      // most letters to choose from (first 2, then 3, then 4)
 const PASS_RATIO = { 1: 0.8, 2: 0.85, 3: 0.9 }; // right on the first try needed to pass: ⭐ 80%, ⭐⭐ 85%, ⭐⭐⭐ 90%
-const FIND_BY_STARS = { 1: 4, 2: 5, 3: 6 };
-const PRACTICE_LENGTH = 12;     // questions in "Exersează" (letters by sound + syllables/words)
-const PRACTICE_TEXT = 5;         // of which syllables and words (when enough are learned)      // "find the letter" questions, unless a level sets its own
+const FIND_BY_STARS = { 1: 4, 2: 5, 3: 6 };      // "find the letter" questions (choices 2, 2, 3, 3, 4, 4), unless a level sets its own
+const READQUIZ_BY_STARS = { 1: 4, 2: 5, 3: 6 };  // "find the syllable / word" questions, unless a level sets its own
+const PRACTICE_LENGTH = 16; // tasks in "Exersează" (tracing + letters by sound + syllables/words)
+const PRACTICE_TRACE = 3;   // of which tracing (3 different letters, big or small)
+const PRACTICE_TEXT = 7;    // and syllables / words (when enough are learned)
 const MAX_NEW_ITEMS = 2;    // most new syllables + words in one level (more gives a warning in the console)
 const MAX_REC_SECONDS = 4;  // a recording stops by itself after this
 
@@ -57,6 +59,8 @@ const T = {
   otherLetters: 'Alte litere (pentru alfabet)',
   instructions: 'Instrucțiuni (vocea ta)',
   practice: 'Exersează',
+  comingSoon: 'Litere noi în curând',
+  newRibbon: 'NOU',
   theme: 'Aspect',
   themeLight: 'Luminos',
   themeDark: 'Întunecat',
@@ -69,10 +73,12 @@ const T = {
   ovLearn: 'Prezentarea literei',
   ovTrace: 'Scrie litera',
   ovFind: 'Găsește litera după sunet',
-  ovAllNew: l => `toate cu ${l} · 2 → 4 variante`,
-  ovSomeNew: (n, l) => `${n} cu ${l}, restul litere învățate · 2 → 4 variante`,
+  ovAllNew: l => `toate cu ${l} · 2, 2, 3, 3, 4, 4 variante`,
+  ovSomeNew: (n, l) => `${n} cu ${l}, restul litere învățate · 2, 2, 3, 3, 4, 4 variante`,
   ovPair: 'Perechi: literă mare – mică',
   ovAnyLetters: 'orice litere învățate',
+  ovLearnPage: n => `pagină de învățare (${n} ${n === 1 ? 'nouă' : 'noi'}), nu se punctează`,
+  ovPairs: n => `${n} perechi, o singură sarcină`,
   ovRead: 'Ascultă silabe și cuvinte noi',
   ovQuiz: 'Găsește silaba / cuvântul',
   ovChoices: n => `${n} variante`,
@@ -92,6 +98,7 @@ const ICONS = {
   back: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
   left: '<polyline points="15 18 9 12 15 6"/>',
   right: '<polyline points="9 18 15 12 9 6"/>',
+  top: '<polyline points="18 15 12 9 6 15"/>',
   settings: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   steps: '<polyline points="3 20 8 20 8 15 13 15 13 10 18 10 18 5 21 5"/>',
@@ -174,6 +181,7 @@ const LEVEL_DATA = LEVELS.map(level => {
     items: [...new Set([...syllables, ...words])],
     stars: Math.min(3, Math.max(1, level.stars || (level.practice ? 2 : 1))),
     find: level.find,
+    choices: level.choices,
     quiz: level.quiz,
   };
 }).filter(level => level.letters.length);
@@ -254,6 +262,8 @@ const textKey = text => 'T_' + slug(text);     // a syllable or word
 // Vowels next to each other stay together (sau, mii, ia).
 const isVowel = ch => 'aeiouăâî'.includes(ch.toLocaleLowerCase('ro'));
 function syllablesOf(word) {
+  const byHand = typeof SYLLABLE_SPLIT === 'object' && SYLLABLE_SPLIT[word];
+  if (byHand) return byHand.split('-');
   const ch = [...word];
   const out = [];
   let cur = '';
@@ -356,8 +366,26 @@ function preloadSounds(keys) {
 let playToken = 0;
 let currentSource = null;
 
+// While a sound (or a row of sounds) is playing, the sound buttons can't be pressed again.
+let soundEndsAt = 0;   // when the sound now playing ends (performance.now() time)
+let holdToken = -1;    // a row of sounds in progress (instruction, then letter…)
+const holdSound = token => { holdToken = token; };
+const releaseSound = token => {
+  if (holdToken !== token) return;
+  holdToken = -1;
+  soundEndsAt = Math.max(soundEndsAt, performance.now());
+};
+const SOUND_GAP = 500;  // ms to wait after a sound ends or is stopped (and after a press) before the next press
+let lastSoundPress = 0;
+// a sound (or a row of sounds) is playing right now
+const soundPlaying = () => holdToken === playToken || performance.now() < soundEndsAt
+  || (hasSpeech && speechSynthesis.speaking);
+// too soon after the last sound, or the last press, to start a new one
+const soundTooSoon = () => performance.now() < soundEndsAt + SOUND_GAP || performance.now() < lastSoundPress + SOUND_GAP;
+
 function stopSound() {
   playToken++;
+  soundEndsAt = 0;
   if (hasSpeech && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel();
   if (currentSource) {
     try { currentSource.stop(); } catch { /* already stopped */ }
@@ -394,15 +422,19 @@ function playKey(key, fallbackText, fresh = false, delay = 0) {
   if (!ctx) {
     // very old browser: normal audio
     audioEl.src = audioUrl(key);
+    soundEndsAt = performance.now() + 1500;
     return audioEl.play().catch(() => speak(fallbackText));
   }
   const when = ctx.currentTime + delay;
+  soundEndsAt = performance.now() + delay * 1000 + 500; // until the recording is loaded
   loadBuffer(key, fresh).then(buffer => {
     if (token !== playToken) return; // something else was played meanwhile
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    source.start(Math.max(when, ctx.currentTime));
+    const start = Math.max(when, ctx.currentTime);
+    source.start(start);
+    soundEndsAt = performance.now() + (start - ctx.currentTime + buffer.duration) * 1000;
     currentSource = source;
   }).catch(() => { if (token === playToken) speak(fallbackText); });
 }
@@ -424,6 +456,7 @@ async function playAndWait(key, fallbackText, token) {
         source.onended = resolve;
         currentSource = source;
         source.start();
+        soundEndsAt = performance.now() + buffer.duration * 1000;
         setTimeout(resolve, buffer.duration * 1000 + 400); // in case "ended" never comes
       });
       return;
@@ -454,6 +487,11 @@ const VOICE = {
   again: { key: 'V_again', text: 'Mai încearcă o dată.' },
   match: { key: 'V_match', text: 'Formează perechi din imagini și cuvinte.' },
   find: { key: 'V_find', text: 'Ascultă și apasă pe litera pe care o auzi.' },
+  // short versions for ⭐⭐ and ⭐⭐⭐ levels (the learner knows the tasks by then)
+  traceShort: { key: 'V_trace3', text: 'Scrie litera.' },
+  findShort: { key: 'V_find3', text: 'Găsește litera.' },
+  pairShort: { key: 'V_pair3', text: 'Formează perechi.' },
+  practice: { key: 'V_practice', text: 'Exersează.' },  // said when Exersează starts
 };
 const playVoice = (name, delay) => playKey(VOICE[name].key, VOICE[name].text, false, delay);
 
@@ -470,7 +508,7 @@ function rippleSound(b = $app.querySelector('.listen-btn:not(.demo)'), delay = 0
 }
 document.addEventListener('pointerdown', e => {
   const b = e.target.closest && e.target.closest('.listen-btn:not(.demo)');
-  if (b) rippleSound(b);
+  if (b && !soundPlaying() && !soundTooSoon()) rippleSound(b);
 });
 
 // Phones only allow sound after a tap: switch sound on with the first tap.
@@ -543,8 +581,37 @@ window.addEventListener('popstate', () => {
   render(true);
 });
 
+// Page turn: when the page changes, the old page slides out while the new one slides in,
+// side by side like a turned page (from the right when going deeper, from the left going back).
+const pageDepth = path => (path === '/' ? 0 : /^\/(letter|level)\/|^\/(prezentare|inregistrare)$/.test(path) ? 2 : 1);
+let shownPath = null;
+function pageTurn(dir) {
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const back = dir === 'back';
+  document.querySelectorAll('.page-old').forEach(el => el.remove());
+  // a still copy of the old page slides out while the new page is drawn in $app
+  const old = document.createElement('div');
+  old.className = 'page-old' + (back ? ' back' : '');
+  const copy = $app.cloneNode(true);
+  copy.classList.remove('turn-next', 'turn-back');
+  old.appendChild(copy);
+  old.addEventListener('animationend', () => old.remove());
+  setTimeout(() => old.remove(), 600); // also when the animation never runs (e.g. a hidden tab)
+  document.body.appendChild(old);
+  $app.classList.remove('turn-next', 'turn-back');
+  void $app.offsetWidth; // restart the animation
+  $app.classList.add(back ? 'turn-back' : 'turn-next');
+}
+$app.addEventListener('animationend', e => {
+  if (e.target !== $app) return;
+  $app.classList.remove('turn-next', 'turn-back');
+  placeBubbleTip(); // measured again now the page stands still
+});
+
 function render(entering = false) {
   const path = currentPath();
+  if (shownPath !== null && path !== shownPath) pageTurn(pageDepth(path) < pageDepth(shownPath) ? 'back' : 'next');
+  shownPath = path;
   let m;
   if (path === '/letters') renderAlphabet();
   else if ((m = path.match(/^\/letter\/(\d+)$/)) && LETTERS[+m[1]]) renderLetter(+m[1]);
@@ -610,14 +677,14 @@ function shuffle(list) {
 /* ---------- Home: the two parts ---------- */
 function renderHome() {
   const done = doneCount();
-  const total = LEVEL_DATA.length;
   const next = nextLevel();
   // One line of 4 letters around where you are: the 2 last learned, the one being learned (big),
   // and the next one. (Learned = the level that opens the next letter is passed.)
   const groups = letterGroups();
   const learned = g => isDone(g.levels.find(i => LEVEL_DATA[i].stars === 2) ?? g.levels[0]);
   const cur = groups.findIndex(g => !learned(g));
-  const cell = (g, cls) => `<span class="${cls}">${levelText(g.levels[0])}</span>`;
+  // the letter being learned jumps on its red line (the letter and the line move separately)
+  const cell = (g, cls) => `<span class="${cls}">${cls === 'now' ? `<span class="jump">${levelText(g.levels[0])}</span>` : levelText(g.levels[0])}</span>`;
   // Always 4 when there are enough letters: near the start more coming letters, near the end more learned ones.
   const SHOW = 4;
   const from = cur === -1 ? 0 : Math.max(0, Math.min(cur - 2, groups.length - SHOW));
@@ -633,11 +700,12 @@ function renderHome() {
       </button>
       <button class="home-card levels-card" data-action="go" data-value="/levels">
         <span class="art"><span class="mini-map">${miniMap}</span></span>
-        <span class="label">${icon('steps')}<span>${T.levels}</span><span class="count">${done} / ${total}</span></span>
-        <span class="progress"><i style="width:${total ? (done / total) * 100 : 0}%"></i></span>
+        <span class="label">${icon('steps')}<span>${T.levels}</span></span>
       </button>
+      <!-- Exersează: its symbol and its name (the name is also said aloud when it starts) -->
       <button class="home-card practice-card${done ? '' : ' locked'}" data-action="go" data-value="/exercitiu">
-        <span class="label"><span class="big">🔁</span><span>${T.practice}</span><span class="count">${PRACTICE_LENGTH}</span></span>
+        <span class="flying" aria-hidden="true">${flyingBits()}</span>
+        <span class="label"><span class="big" aria-hidden="true">🔁</span><span>${T.practice}</span></span>
       </button>
     </div>`;
 }
@@ -686,28 +754,50 @@ function showLetter(i) {
   playLetter(LETTERS[i]);
 }
 
-/* ---------- Part 2: levels ---------- */
+/* ---------- Part 2: levels ----------
+   One row per letter: the letter's box shows one star per sublevel (most letters 3,
+   Ii 1, Ss 2) – golden for the sublevels passed, shadowy for the rest. Tapping the box shows its sublevels ⭐ / ⭐⭐ / ⭐⭐⭐
+   to its right (grey stars until passed, then golden); tapping again hides them. */
+let openGroup = -1; // the letter whose sublevels are shown (-1: none)
+
 function renderLevels() {
   const next = nextLevel();
-  const tile = i => {
-    const level = LEVEL_DATA[i];
-    const done = isDone(i);
-    const open = isOpen(i);
-    const state = done ? ' done' : !open ? ' locked' : i === next ? ' current' : '';
-    const badge = done ? icon('check') : !open ? icon('lock') : '';
-    const size = level.letters.length > 1 ? ' multi' : '';
-    return `<button class="level${state}${size}" data-action="openLevel" data-value="${i}" aria-label="${levelName(i)}">
-      ${badge ? `<span class="badge">${badge}</span>` : ''}
-      <span class="glyphs">${levelText(i)}</span>
-      <span class="stars" aria-hidden="true">${stars(i)}</span>
-    </button>`;
+  const row = (g, k) => {
+    const earned = g.levels.filter(isDone).length;
+    const open = isOpen(g.levels[0]);
+    const shown = k === openGroup;
+    const state = (!open ? ' locked' : g.levels.includes(next) ? ' current' : '') + (shown ? ' open' : '');
+    const mark = !open ? icon('lock')
+      : g.levels.map((_, n) => `<i class="${n < earned ? 'gold' : ''}">⭐</i>`).join(''); // one star per sublevel (Ii 1, Ss 2)
+    const subs = g.levels.map(i => {
+      const done = isDone(i);
+      const subOpen = isOpen(i);
+      const st = !subOpen ? ' locked' : i === next ? ' current' : '';
+      const starRow = Array.from({ length: LEVEL_DATA[i].stars }, () => `<i class="${done ? 'gold' : ''}">⭐</i>`).join('');
+      return `<button class="sub-level${st}" data-action="openLevel" data-value="${i}" aria-label="${levelName(i)}">
+        <span class="sub-stars">${starRow}</span>
+        ${!subOpen ? `<span class="badge">${icon('lock')}</span>` : ''}
+      </button>`;
+    }).join('');
+    return `<div class="letter-row${shown ? ' open' : ''}">
+      <button class="letter-box${state}" data-action="toggleLetter" data-value="${k}" aria-expanded="${shown}">
+        ${open && !earned ? `<span class="ribbon">${T.newRibbon}</span>` : ''}
+        <span class="glyphs">${levelText(g.levels[0])}</span>
+        <span class="earned">${mark}</span>
+      </button>
+      ${shown ? `<div class="sub-col">${subs}</div>` : ''}
+    </div>`;
   };
-  // one row per letter; empty cells fill up the rows of letters with fewer than 3 levels
-  const rows = letterGroups().map(g => g.levels.map(tile).join('') + '<span class="level-gap"></span>'.repeat(3 - g.levels.length)).join('');
 
   $app.innerHTML = `
-    ${topBar({ left: backButton('/'), title: T.levels, right: `<span class="count">${doneCount()} / ${LEVEL_DATA.length}</span>` })}
-    <div class="level-grid stars-grid">${rows}</div>`;
+    ${topBar({ left: backButton('/'), title: T.levels })}
+    <div class="letter-grid">${letterGroups().map(row).join('')}
+      <!-- after the last letter: more letters are coming -->
+      <div class="letter-row"><div class="letter-box soon" role="note">
+        <span class="soon-icon" aria-hidden="true">⏳</span>
+        <span class="soon-text">${T.comingSoon}</span>
+      </div></div>
+    </div>`;
 }
 
 /* ---------- One level ----------
@@ -719,7 +809,8 @@ function levelSteps(i) {
   const lv = LEVEL_DATA[i];
   const steps = lv.stars === 1 ? ['learn', 'trace', 'find', 'pair'] : ['trace', 'find', 'pair'];
   if (lv.items.length) steps.push('read');
-  if (lv.stars === 3 ? itemsUpTo(i).length >= 2 : lv.items.length) steps.push('readquiz');
+  // the syllable quiz needs at least 2 different syllables/words learned (else there is nothing to choose between)
+  if (itemsUpTo(i).length >= 2 && (lv.stars === 3 || lv.items.length)) steps.push('readquiz');
   if (matchWords(i).length >= 2) steps.push('match'); // connect the picture with the word
   steps.push('result');
   return steps;
@@ -743,14 +834,37 @@ function startLesson(i) {
     ...splitSyllables(LEVEL_DATA[i].items).map(textKey),
     ...Object.values(VOICE).map(v => v.key),
   ]);
-  lesson = { level: i, steps, step: 0, pos: 0, part: 0, right: 0, total: 0, find: null, pair: null, rq: null, passed: false };
+  // tracing: each letter of the level, first big, then small
+  const traceList = LEVEL_DATA[i].letters.flatMap(l => [{ l, small: false }, { l, small: true }]);
+  lesson = { level: i, steps, step: 0, pos: 0, part: 0, right: 0, total: 0, log: [], traceList, find: null, pair: null, rq: null, passed: false };
 }
 
 const stepName = () => lesson.steps[lesson.step];
 
+// Not passed: 👍 (good effort) when at least half was right, 🌱 (still growing) when less.
+const notPassedEmoji = () => (lesson.total && lesson.right / lesson.total >= 0.5 ? '👍' : '🌱');
+
+// One task done: right (on the first try) or not. The result screen shows them in order as dots.
+function scoreTask(right) {
+  lesson.total++;
+  if (right) lesson.right++;
+  lesson.log.push(!!right);
+}
+
+// The result without numbers: one dot per task in order, green = right, orange = not right.
+// Up to 8 dots in one line; more in two lines of equal length (with an odd number, the second has one less).
+const resultDots = () => {
+  const n = lesson.log.length;
+  const dot = (ok, k) => `<i class="${ok ? 'ok' : 'miss'}" style="animation-delay:${0.15 + k * 0.06}s"></i>`;
+  const first = n > 8 ? Math.ceil(n / 2) : n;
+  const row = (from, to) => `<div class="row">${lesson.log.slice(from, to).map((ok, k) => dot(ok, from + k)).join('')}</div>`;
+  return `<div class="result-dots" style="--cols:${Math.max(1, first)}" aria-label="${lesson.right} / ${lesson.total}">${
+    row(0, first)}${first < n ? row(first, n) : ''}</div>`;
+};
+
 // The level's name at the top.
 const levelHeader = () => (lesson.practice
-  ? `<div class="level-label">🔁 ${T.practice}</div>`
+  ? `<div class="level-label" aria-label="${T.practice}">🔁</div>`
   : `<div class="level-label">${levelText(lesson.level)}</div>`);
 // The level's stars, in the top right corner, labelled as its difficulty.
 const difficultyBadge = () => (lesson.practice ? ''
@@ -763,16 +877,27 @@ function jumpToStep(k) {
   stopSound();
   stopPairDemo();
   if (trace) stopDemo();
+  const back = k < lesson.step;
   lesson.step = k - 1;
-  nextStep(); // sets the exercise up and starts its sound
+  nextStep(back ? 'back' : 'next'); // sets the exercise up and starts its sound (◀ turns the page back)
 }
 
 // The steps of the level, as a row of dots under the top bar: done, now, still to come.
 // In test mode with ◀ ▶ beside the dots, to jump to the previous / next exercise.
+// Each kind of exercise always has the same icon, so the learner knows what comes before it starts.
+const STEP_ICONS = {
+  learn: '👀',                       // a new letter: look
+  trace: '✍️',                       // write with the finger
+  find: '👂',                        // listen and find the letter
+  pair: '🧩',                        // big and small letters that belong together
+  read: '📖',                        // new syllables and words: listen and read
+  readquiz: '👂',                    // listen and find the syllable / word
+  match: '🖼️',                       // picture and word
+};
 function stepDots() {
   const dots = lesson.steps.slice(0, -1)
-    .map((_, k) => `<i class="${k < lesson.step ? 'ok' : k === lesson.step ? 'now' : ''}"></i>`).join('');
-  const row = `<div class="dots small steps">${dots}</div>`;
+    .map((name, k) => `<i class="step-ic s-${name} ${k < lesson.step ? 'ok' : k === lesson.step ? 'now' : 'next'}"><span class="e">${STEP_ICONS[name] || ''}</span></i>`).join('');
+  const row = `<div class="step-icons">${dots}</div>`;
   if (!settings.testMode) return row;
   const last = lesson.steps.length - 2; // the last exercise before the result
   return `<div class="step-jump">
@@ -803,7 +928,7 @@ function renderLevel(i, entering) {
 }
 
 // Move on to the next step of the level.
-function nextStep() {
+function nextStep(turn = 'next') {
   lesson.step++;
   lesson.pos = 0;
   lesson.part = 0;
@@ -812,6 +937,7 @@ function nextStep() {
   if (lesson.practice) {
     if (name === 'result') finishLevel();
     window.scrollTo(0, 0);
+    pageTurn(turn);
     renderPractice(false);
     return playStepStart();
   }
@@ -821,19 +947,46 @@ function nextStep() {
   if (name === 'readquiz') lesson.rq = makeReadQuiz(i);
   if (name === 'result') finishLevel();
   window.scrollTo(0, 0);
+  pageTurn(turn);
   renderLevel(i, false);
   playStepStart();
 }
 
+// Spoken instructions at the start of a task: the full one in ⭐ levels,
+// a short one from ⭐⭐ on and in Exersează (e.g. "Formează perechi.").
+const withIntro = () => !lesson.practice && LEVEL_DATA[lesson.level].stars === 1;
+const instruction = name => (withIntro() ? name : { trace: 'traceShort', find: 'findShort', pair: 'pairShort', match: 'pairShort' }[name]);
+// From ⭐⭐ on, a moment of quiet after entering a task, before anything is said.
+const START_QUIET = 600; // ms
+const withQuiet = () => !lesson.practice && LEVEL_DATA[lesson.level].stars >= 2;
+
 function playStepStart() {
+  // from ⭐⭐ on: a moment of quiet after entering the task, then its sound
+  if (withQuiet()) {
+    if (stepName() === 'trace') return; // tracing waits and speaks by itself (sayTraceLetter)
+    stopSound();
+    const token = playToken, here = lesson, step = lesson.step;
+    setTimeout(() => { if (token === playToken && lesson === here && lesson.step === step) startStepSound(); }, START_QUIET);
+    return;
+  }
+  startStepSound();
+}
+
+function startStepSound() {
   const name = stepName();
   // the sound starts by itself (in "find the letter" the waves wait for the letter's sound, not the instruction)
-  if (['readquiz', 'pair', 'match', 'read'].includes(name)) rippleSound();
+  // (spoken instructions start their own waves: see speakInstruction)
+  if (['readquiz', 'read'].includes(name)) rippleSound();
   const letters = LEVEL_DATA[lesson.level].letters;
   if (name === 'learn') playLetter(letters[lesson.pos]);
-  if (name === 'find') instructionThenQuestion('find', lesson.find);
-  if (name === 'pair') { playVoice('pair'); setTimeout(() => { if (lesson && stepName() === 'pair') playPairDemo(); }, 700); }
-  if (name === 'match') { playVoice('match'); setTimeout(() => { if (lesson && stepName() === 'match') playPairDemo(); }, 700); }
+  // spoken instructions start by themselves: in ⭐ the full one (pairing: with the finger demo),
+  // from ⭐⭐ on a short one without the demo (the 🔊 button still plays the full instruction and demo)
+  const intro = withIntro();
+  if (name === 'find') instructionThenQuestion(instruction('find'), lesson.find);
+  if (name === 'pair' || name === 'match') {
+    speakInstruction(instruction(name));
+    if (intro) setTimeout(() => { if (lesson && stepName() === name) playPairDemo(); }, 700);
+  }
   if (name === 'read') readAllAloud();
   if (name === 'readquiz') playQuestion(lesson.rq);
 }
@@ -879,7 +1032,7 @@ function arc(cx, cy, rx, ry, from, to) { // angles in degrees: 0 right, 90 down,
 const join = (...parts) => [].concat(...parts);
 
 const STROKES = {
-  I: { w: 40, strokes: [line(20, 0, 20, 100), line(6, 0, 34, 0), line(6, 100, 34, 100)] },
+  I: { w: 24, strokes: [line(12, 0, 12, 100)] },   // a single straight line (no cross-bars)
   i: { w: 20, strokes: [line(10, 40, 10, 100), line(10, 18, 10, 18.5)] },
   S: { w: 60, strokes: [join(arc(30, 26, 26, 25, 320, 90), arc(30, 75, 28, 25, 270, 500))] },
   s: { w: 40, strokes: [join(arc(20, 55, 18, 15, 320, 90), arc(20, 85, 19, 15, 270, 500))] },
@@ -891,6 +1044,10 @@ const STROKES = {
   a: { w: 40, strokes: [arc(20, 70, 20, 30, 330, -20), line(40, 40, 40, 100)] },
   N: { w: 58, strokes: [[[0, 100], [0, 0], [58, 100], [58, 0]]] },
   n: { w: 40, strokes: [line(0, 40, 0, 100), join(arc(20, 58, 20, 18, 180, 360), line(40, 58, 40, 100))] },
+  E: { w: 50, strokes: [[[50, 0], [0, 0], [0, 100], [50, 100]], line(0, 50, 42, 50)] },
+  e: { w: 40, strokes: [join(line(0, 70, 40, 70), arc(20, 70, 20, 30, 0, -320))] },
+  D: { w: 56, strokes: [join(line(0, 0, 0, 100), line(0, 100, 20, 100), arc(20, 50, 36, 50, 90, -90), line(20, 0, 0, 0))] },  // one stroke: down, then round the belly
+  d: { w: 40, strokes: [arc(20, 70, 20, 30, 330, -20), line(40, 0, 40, 100)] },
 };
 
 const TRACE_COVER = 0.7;    // at least this share of the middle of the grey line must be covered
@@ -922,7 +1079,7 @@ function traceLayout(l, ch, W, H) {
   return {
     strokes: glyph.strokes.map(stroke => stroke.map(([x, y]) => [ox + x * s, oy + y * s])),
     numbers: glyph.strokes.map((_, k) => k + 1),
-    width: Math.min(15 * s, W * 0.09), // thickness of the grey line
+    width: Math.min(22 * s, W * 0.125), // thickness of the grey line
     baseline: oy + 100 * s,            // the line the letters stand on
     left: W * 0.08,
     right: W * 0.92,
@@ -946,7 +1103,8 @@ const cssVar = name => getComputedStyle(document.documentElement).getPropertyVal
 // Canvas sized to its box, sharp on phone screens; drawing uses CSS pixels.
 function sizeCanvas(canvas) {
   const ratio = window.devicePixelRatio || 1;
-  const box = canvas.getBoundingClientRect();
+  // layout size, not getBoundingClientRect: that one is off while the page-turn animation runs
+  const box = { width: canvas.offsetWidth, height: canvas.offsetHeight };
   canvas.width = Math.round(box.width * ratio);
   canvas.height = Math.round(box.height * ratio);
   const ctx = canvas.getContext('2d');
@@ -957,11 +1115,19 @@ function sizeCanvas(canvas) {
 let trace = null; // { layout, guide, demo, ink, tries, demoId }
 
 function renderTrace() {
-  const l = LEVEL_DATA[lesson.level].letters[lesson.pos];
-  const ch = lesson.part ? l.lower : l.upper; // first the big letter, then the small one
+  const { l, small } = lesson.traceList[lesson.pos]; // in a level: first the big letter, then the small one
+  const ch = small ? l.lower : l.upper;
+  if (lesson.pos === 0) lesson.traceRes = []; // first try right or not, per letter of the step
+  // one dot per letter of this step, as in the other tasks: the one being written has a blue ring,
+  // then green (right the first time) or orange
+  const dots = lesson.traceList.map((t, k) => {
+    const r = lesson.traceRes[k];
+    return `<i class="${r === true ? 'ok' : r === false ? 'retry' : k === lesson.pos ? 'now' : ''}"></i>`;
+  }).join('');
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="page">
+      <div class="q-bubble trace-bubble"><span class="q-tip"></span><div class="dots${lesson.traceList.length > 6 ? ' many' : ''}">${dots}</div></div>
       <div class="trace-wrap">
         <div class="trace-guide-text"><span class="glyphs">${ch}</span></div>
         <canvas class="trace-guide"></canvas>
@@ -976,6 +1142,7 @@ function renderTrace() {
       </div>
     </div>`;
 
+  placeBubbleTip();
   const wrap = $app.querySelector('.trace-wrap');
   const guide = sizeCanvas(wrap.querySelector('.trace-guide'));
   const layout = traceLayout(l, ch, guide.W, guide.H);
@@ -993,9 +1160,38 @@ function renderTrace() {
   }
   setupInk(wrap.querySelector('.trace-canvas'), layout ? layout.width * 0.9 : null);
   if (layout) {
-    playVoice('trace');                 // spoken instruction
-    if (LEVEL_DATA[lesson.level].stars < 3) setTimeout(() => playDemo(), 400); // the finger shows how to write it (⭐⭐⭐: only with 👆)
+    sayTraceLetter(l);
+    // the finger shows how to write it (⭐⭐⭐ and Exersează: only with 👆)
+    if (!lesson.practice && LEVEL_DATA[lesson.level].stars < 3) setTimeout(() => playDemo(), 400);
   }
+}
+
+// Tracing: the spoken instruction (at the first letter of the step), then the letter's own sound.
+async function sayTraceLetter(l) {
+  stopSound();
+  const token = playToken;
+  if (withQuiet()) {                // from ⭐⭐ on: a moment of quiet first
+    await pause(START_QUIET);
+    if (token !== playToken) return;
+  }
+  // Exersează: its name is said first, so the learner hears what this part is called
+  if (lesson.practice && !lesson.nameSaid) {
+    lesson.nameSaid = true;
+    holdSound(token);
+    await playAndWait(VOICE.practice.key, VOICE.practice.text, token);
+    if (token !== playToken) return;
+    await pause(400);
+    releaseSound(token);
+  }
+  if (lesson.pos === 0) {
+    const v = VOICE[instruction('trace')];
+    holdSound(token);
+    await playAndWait(v.key, v.text, token);
+    if (token !== playToken) return;
+    await pause(300);
+    releaseSound(token);
+  }
+  if (token === playToken) playLetter(l);
 }
 
 // Grey letter with a numbered dot where each stroke starts.
@@ -1047,8 +1243,8 @@ function setupInk(canvas, width) {
   trace.ink = canvas;
   let last = null;
   const point = e => {
-    const r = canvas.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    const r = canvas.getBoundingClientRect(); // scaled back to layout size (right even mid page-turn)
+    return { x: (e.clientX - r.left) * canvas.offsetWidth / r.width, y: (e.clientY - r.top) * canvas.offsetHeight / r.height };
   };
   canvas.addEventListener('pointerdown', e => {
     stopDemo();
@@ -1106,7 +1302,7 @@ function playDemo() {
   const { strokes, width } = trace.layout;
   const canvas = ctx.canvas;
   const lengths = strokes.map(st => st.reduce((sum, p, k) => (k ? sum + Math.hypot(p[0] - st[k - 1][0], p[1] - st[k - 1][1]) : 0), 0));
-  const speed = canvas.getBoundingClientRect().height * 0.55; // pixels per second
+  const speed = canvas.offsetHeight * 0.55; // pixels per second
   let strokeIndex = 0;
   let travelled = 0;
   let lastTime = null;
@@ -1185,7 +1381,7 @@ function stopDemo() {
 //   outside = share of the drawing that is off the grey line (with some leeway)
 function scoreTrace() {
   const { strokes, width } = trace.layout;
-  const box = trace.ink.getBoundingClientRect();
+  const box = { width: trace.ink.offsetWidth, height: trace.ink.offsetHeight };
   const k = 0.5; // check at half size: fast enough on any phone
   const w = Math.max(1, Math.round(box.width * k));
   const h = Math.max(1, Math.round(box.height * k));
@@ -1258,8 +1454,10 @@ function traceCheck() {
   const good = traceGood(scoreTrace());
   trace.tries++;
   if (trace.tries === 1) {
-    lesson.total++;
-    if (good) lesson.right++;
+    scoreTask(good);
+    lesson.traceRes[lesson.pos] = good;
+    const dot = $app.querySelectorAll('.trace-bubble .dots i')[lesson.pos];
+    if (dot) dot.className = good ? 'ok' : 'retry';
   }
   if (good) {
     trace.done = true;
@@ -1290,13 +1488,8 @@ function traceCheck() {
 }
 
 function traceNextLetter() {
-  if (!lesson.part) {
-    lesson.part = 1; // now the small letter
-    return renderTrace();
-  }
-  if (lesson.pos < LEVEL_DATA[lesson.level].letters.length - 1) {
+  if (lesson.pos < lesson.traceList.length - 1) {
     lesson.pos++;
-    lesson.part = 0;
     return renderTrace();
   }
   nextStep();
@@ -1328,7 +1521,8 @@ function makeFindQuiz(i) {
     focus: LEVEL_DATA[i].letters,                               // the level's letter
     extras: lettersAfter(i, pool),                              // wrong choices while few letters are known
     length: findLength(i),
-    options: MAX_OPTIONS,                                       // first 2 choices, then 3, then 4
+    options: MAX_OPTIONS,                                       // choices grow every 2 questions: 2, 2, 3, 3, 4, 4
+    choices: LEVEL_DATA[i].choices,                             // or the level's own list, e.g. [2, 2, 3, 3]
     grow: true,
     newFirst: LEVEL_DATA[i].stars === 1 ? Infinity : 0,         // ⭐ introduction: every question asks the new letter
     weight: letterWeight,
@@ -1360,7 +1554,7 @@ function readQuizSize(i) {
   const mastery = lv.stars === 3;
   const pool = mastery ? all : lv.items;                     // ⭐⭐⭐ mixes everything so far
   const earlier = all.filter(t => !pool.includes(t));
-  const defaultLength = lv.stars === 1 ? 4 : mastery ? 6 : Math.min(6, Math.max(3, lv.items.length * 2));
+  const defaultLength = READQUIZ_BY_STARS[lv.stars];
   return {
     pool,
     earlier,
@@ -1396,15 +1590,46 @@ function nextQuestion(quiz) {
   if (candidates.length > 1) candidates = candidates.filter(x => x !== quiz.last);
   const target = pickWeighted(candidates, quiz.weight);
 
-  const count = quiz.grow ? Math.min(quiz.options, 2 + quiz.results.length) : quiz.options;
+  const count = quiz.choices && quiz.choices[quiz.results.length]
+    ? quiz.choices[quiz.results.length]                                    // the level's own number of choices
+    : quiz.grow ? Math.min(quiz.options, 2 + Math.floor(quiz.results.length / 2)) : quiz.options; // 2, 2, 3, 3, 4, 4
   const need = count - 1;
-  let others = shuffle(quiz.pool.filter(x => x !== target)).slice(0, need);
-  if (others.length < need) others = others.concat(quiz.extras.slice(0, need - others.length));
+  let others;
+  if (quiz.kind === 'text') {
+    // syllables / words: the wrong choices are this lesson's other new ones (half of the time first)
+    // or earlier syllables and words of about the same length (so the length doesn't give it away)
+    const fresh = shuffle(quiz.pool.filter(x => x !== target));
+    const old = quiz.extras.filter(x => x !== target && !fresh.includes(x));
+    const similar = shuffle(old.filter(x => Math.abs(x.length - target.length) <= 1));
+    const rest = shuffle(old.filter(x => !similar.includes(x)));
+    const order = Math.random() < 0.5 ? [...fresh, ...similar, ...rest] : [...similar, ...fresh, ...rest];
+    others = order.slice(0, need);
+  } else {
+    others = shuffle(quiz.pool.filter(x => x !== target)).slice(0, need);
+    if (others.length < need) others = others.concat(quiz.extras.slice(0, need - others.length));
+  }
+
+  // letters that look alike (a and d): the look-alike is always one of the choices, in small letters
+  let twin = null;
+  if (quiz.kind === 'letter') {
+    twin = lookAlike(target, quiz.pool);
+    if (twin && need > 0) {
+      if (!others.includes(twin)) others = [twin, ...others.filter(x => x !== twin)].slice(0, need);
+    } else twin = null;
+  }
+
+  // the choices in a new order: never the same order more than twice in a row
+  const keyOf = list => list.map(x => (quiz.kind === 'text' ? x : x.lower)).join('|');
+  let options = shuffle([target, ...others]);
+  for (let t = 0; t < 10 && quiz.sameRun >= 1 && keyOf(options) === quiz.lastKey; t++) options = shuffle(options);
+  const key = keyOf(options);
+  quiz.sameRun = key === quiz.lastKey ? (quiz.sameRun || 0) + 1 : 0;
+  quiz.lastKey = key;
 
   quiz.q = {
     target,
-    options: shuffle([target, ...others]),
-    upper: Math.random() < 0.5, // letters: show big or small letters this time
+    options,
+    cases: quiz.kind === 'letter' ? letterCases(options, !!twin) : null, // big or small, per choice
     firstTry: true,
     wrong: [],
     done: false,
@@ -1412,9 +1637,31 @@ function nextQuestion(quiz) {
   quiz.last = target;
 }
 
+// The learned letter that looks like letter l (see SIMILAR_LETTERS), if there is one.
+function lookAlike(l, pool) {
+  const pair = SIMILAR_LETTERS.find(p => p.includes(l.lower));
+  if (!pair) return null;
+  const other = pair.find(x => x !== l.lower);
+  return pool.find(x => x.lower === other) || null;
+}
+
+// Big or small letters for the choices of a question: all big, all small, or (sometimes) mixed.
+// Look-alike letters (a and d) are only alike as small letters, so then all are small.
+function letterCases(options, smallOnly) {
+  const cases = {};
+  const r = Math.random();
+  const mixed = !smallOnly && options.length > 1 && r >= 0.7;
+  options.forEach(l => { cases[l.lower] = smallOnly ? false : mixed ? Math.random() < 0.5 : r < 0.35; });
+  if (mixed) {
+    const vals = Object.values(cases);
+    if (vals.every(v => v) || vals.every(v => !v)) cases[options[0].lower] = !cases[options[0].lower]; // really mixed
+  }
+  return cases;
+}
+
 function optionText(quiz, item) {
   if (quiz.kind === 'text') return item;
-  return quiz.q.upper ? item.upper : item.lower;
+  return quiz.q.cases[item.lower] ? item.upper : item.lower;
 }
 
 function playQuestion(quiz, delay = 0) {
@@ -1451,12 +1698,22 @@ function renderChoice(quiz) {
 // The questions of a step sit in a rounded box under the step dots; its little
 // tip points up at the current step's dot.
 function placeBubbleTip() {
-  const now = $app.querySelector('.dots.steps i.now');
+  const now = $app.querySelector('.step-icons .step-ic.now');
   const bubble = $app.querySelector('.q-bubble');
   if (!now || !bubble) return;
+  bubble.style.transform = '';
   const a = now.getBoundingClientRect();
   const b = bubble.getBoundingClientRect();
-  const x = Math.min(b.width - 22, Math.max(22, a.left + a.width / 2 - b.left));
+  const page = bubble.parentElement.getBoundingClientRect();
+  const center = a.left + a.width / 2;
+  // a short box (2 dots) slides sideways until the current step is above it, staying on screen
+  // the pointer stays on the straight part of the outline, clear of the rounded ends
+  const m = Math.max(22, b.height / 2 + 12);
+  let shift = 0;
+  if (center < b.left + m) shift = Math.max(page.left - b.left, center - m - b.left);
+  else if (center > b.right - m) shift = Math.min(page.right - b.right, center + m - b.right);
+  if (shift) bubble.style.transform = `translateX(${shift}px)`;
+  const x = Math.min(b.width - m, Math.max(m, center - b.left - shift));
   bubble.querySelector('.q-tip').style.left = x + 'px';
 }
 window.addEventListener('resize', placeBubbleTip);
@@ -1472,13 +1729,25 @@ function recordLetter(l, right) {
   saveProgress();
 }
 
-// At the start of a quiz: the spoken instruction first, then the first sound.
-async function instructionThenQuestion(name, quiz) {
+// Plays a spoken instruction; the sound button sends out its waves as it starts.
+// Returns the play token (to see afterwards whether something else started meanwhile).
+async function speakInstruction(name) {
   stopSound();
   const token = playToken;
+  rippleSound();
+  holdSound(token);
   await playAndWait(VOICE[name].key, VOICE[name].text, token);
+  releaseSound(token);
+  return token;
+}
+
+// At the start of a quiz: the spoken instruction first, then the first sound.
+async function instructionThenQuestion(name, quiz) {
+  const token = await speakInstruction(name);
   if (token !== playToken || !lesson || currentQuiz() !== quiz) return;
+  holdSound(token);
   await pause(350);
+  releaseSound(token);
   if (token === playToken) playQuestion(quiz);
 }
 
@@ -1499,8 +1768,7 @@ function answer(i, button) {
     soundRight();
     if (quiz.kind === 'letter') recordLetter(q.target, q.firstTry); // the asked letter: right on the first try or not
     quiz.results.push(q.firstTry);
-    lesson.total++;
-    if (q.firstTry) lesson.right++;
+    scoreTask(q.firstTry);
 
     setTimeout(() => {
       if (!stillHere(here, step)) return;
@@ -1531,7 +1799,7 @@ function makePair(i) {
     : [...fresh, ...shuffle(pool.filter(l => !fresh.includes(l)))].slice(0, count);
   if (chosen.length < count) chosen = chosen.concat(lettersAfter(i, pool).slice(0, count - chosen.length));
   const [left, right] = twoOrders(chosen);
-  return { left, right, matched: [], missed: [], sel: null };
+  return { left, right, cards: mixCards(chosen), matched: [], missed: [], sel: null };
 }
 
 // Demo for the pairing games, showing exactly what to do: the finger taps a card
@@ -1604,6 +1872,20 @@ function twoOrders(items) {
   return [left, right];
 }
 
+// The cards of the pairing game in two columns, but the big and small letters anywhere
+// (not all big ones on the left); a letter's two cards are never side by side in one row.
+function mixCards(letters) {
+  const all = letters.flatMap(l => [{ side: 'L', l }, { side: 'R', l }]); // L = big letter, R = small letter
+  let cards = shuffle(all);
+  const bad = c => {
+    for (let k = 0; k + 1 < c.length; k += 2) if (c[k].l === c[k + 1].l) return true;          // partners in one row
+    const leftCol = c.filter((_, k) => k % 2 === 0);
+    return leftCol.every(x => x.side === 'L') || leftCol.every(x => x.side === 'R');            // a column of only big / only small
+  };
+  for (let t = 0; t < 50 && letters.length > 1 && bad(cards); t++) cards = shuffle(all);
+  return cards;
+}
+
 function renderPair() {
   const p = lesson.pair;
   const cell = (l, side) => {
@@ -1613,13 +1895,9 @@ function renderPair() {
   };
   $app.innerHTML = `
     ${levelTopBar()}
-    <div class="top-buttons">
-      <button class="listen-btn small" data-action="pairVoice" aria-label="${T.listen}">${icon('volume')}</button>
-      <button class="listen-btn small demo" data-action="pairDemo" aria-label="${T.traceShow}"><span class="finger">👆</span></button>
-    </div>
-    <div class="pair">
-      <div class="pair-col">${p.left.map(l => cell(l, 'L')).join('')}</div>
-      <div class="pair-col">${p.right.map(l => cell(l, 'R')).join('')}</div>
+    <button class="listen-btn pair-listen" data-action="pairVoice" aria-label="${T.listen}">${icon('volume')}</button>
+    <div class="pair mixed">
+      ${p.cards.map(c => cell(c.l, c.side)).join('')}
       ${pairDemoLayer}
     </div>`;
 
@@ -1636,13 +1914,13 @@ function pick(value, button) {
   }
   if (p.sel.l === l) {
     p.matched.push(l);
-    lesson.total++;
-    if (!p.missed.includes(l)) lesson.right++;
     p.sel = null;
     soundRight();
     renderPair();
     markJustMatched([`L:${l.lower}`, `R:${l.lower}`]);
     if (p.matched.length === p.left.length) {
+      // the whole pairing game counts as one exercise: right if there was no mistake
+      scoreTask(!p.missed.length);
       const here = lesson;
       const step = lesson.step;
       setTimeout(() => { if (stillHere(here, step)) nextStep(); }, 900);
@@ -1705,10 +1983,7 @@ function renderMatch() {
   };
   $app.innerHTML = `
     ${levelTopBar()}
-    <div class="top-buttons">
-      <button class="listen-btn small" data-action="matchVoice" aria-label="${T.listen}">${icon('volume')}</button>
-      <button class="listen-btn small demo" data-action="pairDemo" aria-label="${T.traceShow}"><span class="finger">👆</span></button>
-    </div>
+    <button class="listen-btn pair-listen" data-action="matchVoice" aria-label="${T.listen}">${icon('volume')}</button>
     <div class="pair">
       <div class="pair-col">${m.left.map(w => cell(w, 'P')).join('')}</div>
       <div class="pair-col">${m.right.map(w => cell(w, 'W')).join('')}</div>
@@ -1728,14 +2003,14 @@ function pickMatch(value) {
   }
   if (m.sel.word === word) {
     m.matched.push(word);
-    lesson.total++;
-    if (!m.missed.includes(word)) lesson.right++;
     m.sel = null;
     soundRight();
     playText(word, 0.3); // say the word as a reward
     renderMatch();
     markJustMatched([`P:${word}`, `W:${word}`]);
     if (m.matched.length === m.left.length) {
+      // the whole picture–word game counts as one exercise: right if there was no mistake
+      scoreTask(!m.missed.length);
       const here = lesson;
       const step = lesson.step;
       setTimeout(() => { if (stillHere(here, step)) nextStep(); }, 1400);
@@ -1809,7 +2084,9 @@ function clearPresentation() {
 function presentOne(text) {
   stopSound();
   clearPresentation();
-  presentItem(text, playToken);
+  const token = playToken;
+  holdSound(token);
+  presentItem(text, token).finally(() => releaseSound(token));
 }
 
 // Presents every syllable, then every word, in order.
@@ -1819,6 +2096,7 @@ async function readAllAloud() {
   const token = playToken;
   const here = lesson;
   const level = LEVEL_DATA[lesson.level];
+  holdSound(token);
   await pause(300);
   for (const text of [...level.syllables, ...level.words]) {
     if (token !== playToken || lesson !== here || stepName() !== 'read') break;
@@ -1826,6 +2104,7 @@ async function readAllAloud() {
     if (token !== playToken) break;
     await pause(600);
   }
+  releaseSound(token);
 }
 
 // A word picture: an emoji, or an image file (e.g. 'pictures/mai.svg').
@@ -1838,6 +2117,38 @@ const pictureHTML = pic => (isImageFile(pic)
    12 questions: letters by sound (the less known letters come up more often),
    then syllables and words. Nothing is unlocked; it only shows how it went. */
 // The last level passed: everything up to it counts as learned (-1: none yet).
+// Exersează card: learned letters and syllables drift slowly across its background, in a random mix.
+function flyingBits() {
+  const base = lastDoneLevel();
+  const letters = base >= 0 ? lettersUpTo(base) : [...new Set(LEVEL_DATA.flatMap(lv => lv.letters))].slice(0, 3);
+  const words = base >= 0 ? itemsUpTo(base).filter(t => t.length <= 3) : [];
+  const pool = shuffle([
+    ...letters.map(l => (Math.random() < 0.5 ? l.upper : l.lower)),
+    ...shuffle(words).slice(0, 4),
+  ]).slice(0, 8);
+  // each one enters at a random point of a random edge and leaves through another edge, spinning
+  const edgePoint = side => {
+    const r = Math.round(Math.random() * 100);
+    return [[-12, r], [108, r], [r, -45], [r, 125]][side];   // left, right, top, bottom (in % of the card)
+  };
+  const colors = ['#1E4FB5', '#C2412D', '#23864B', '#D98A00', '#7B4FC9', '#0E8A8A', '#C23C7E'];
+  return pool.map(t => {
+    const color = colors[Math.floor(Math.random() * colors.length)];  // each one its own colour
+    const from = Math.floor(Math.random() * 4);
+    const to = (from + 1 + Math.floor(Math.random() * 3)) % 4;  // any other edge
+    const [x0, y0] = edgePoint(from);
+    const [x1, y1] = edgePoint(to);
+    const dur = 7 + Math.random() * 15;                // seconds for one trip: some quick, some very slow
+    const delay = -Math.random() * dur;                // already on the way when the screen opens
+    const size = Math.random() < 0.3 ? 2.4 + Math.random() * 1 : 1 + Math.random() * 1;  // a few big ones, the rest small
+    // and it spins slowly on the way: a quarter to three quarters of a turn,
+    // half of them clockwise, half anticlockwise
+    const r0 = Math.round(Math.random() * 40 - 20);
+    const r1 = r0 + (Math.random() < 0.5 ? -1 : 1) * Math.round(90 + Math.random() * 180);
+    return `<i style="color:${color};--x0:${x0}%;--y0:${y0}%;--x1:${x1}%;--y1:${y1}%;--r0:${r0}deg;--r1:${r1}deg;font-size:${size.toFixed(2)}rem;animation-duration:${dur.toFixed(1)}s;animation-delay:${delay.toFixed(1)}s">${t}</i>`;
+  }).join('');
+}
+
 function lastDoneLevel() {
   for (let i = LEVEL_DATA.length - 1; i >= 0; i--) if (isDone(i)) return i;
   return -1;
@@ -1848,12 +2159,19 @@ function startPractice() {
   const letters = lettersUpTo(base);
   const items = itemsUpTo(base);
   const textLength = items.length >= 2 ? PRACTICE_TEXT : 0;
+  // tracing: PRACTICE_TRACE different letters (the less known ones more often), each big or small at random
+  const traceList = [];
+  const traceable = letters.filter(l => STROKES[l.upper] && STROKES[l.lower]);
+  while (traceList.length < Math.min(PRACTICE_TRACE, traceable.length)) {
+    const l = pickWeighted(traceable.filter(x => !traceList.some(t => t.l === x)), letterWeight);
+    traceList.push({ l, small: Math.random() < 0.5 });
+  }
   const find = {
     kind: 'letter',
     pool: letters,
     focus: letters,
     extras: lettersAfter(base, letters),        // wrong choices while few letters are known
-    length: PRACTICE_LENGTH - textLength,
+    length: PRACTICE_LENGTH - textLength - traceList.length,
     options: Math.min(MAX_OPTIONS, Math.max(3, letters.length)),
     weight: letterWeight,
     results: [], last: null, q: null,
@@ -1866,8 +2184,9 @@ function startPractice() {
     nextQuestion(rq);
   }
   preloadSounds([...letters.map(letterKey), ...items.map(textKey), ...Object.values(VOICE).map(v => v.key)]);
-  lesson = { practice: true, level: base, steps: rq ? ['find', 'readquiz', 'result'] : ['find', 'result'],
-    step: 0, pos: 0, part: 0, right: 0, total: 0, find, rq, passed: false };
+  const steps = [...(traceList.length ? ['trace'] : []), 'find', ...(rq ? ['readquiz'] : []), 'result'];
+  lesson = { practice: true, level: base, steps,
+    step: 0, pos: 0, part: 0, right: 0, total: 0, log: [], traceList, find, rq, passed: false };
 }
 
 function renderPractice(entering) {
@@ -1877,10 +2196,11 @@ function renderPractice(entering) {
   }
   if (!lesson || !lesson.practice || entering) startPractice();
   const name = stepName();
-  if (name === 'find') renderChoice(lesson.find);
+  if (name === 'trace') renderTrace();
+  else if (name === 'find') renderChoice(lesson.find);
   else if (name === 'readquiz') renderChoice(lesson.rq);
   else renderResult();
-  if (entering) playStepStart();
+  if (entering && name !== 'trace') playStepStart(); // tracing says its letter by itself
 }
 
 /* Result */
@@ -1903,17 +2223,18 @@ function renderResult() {
     $app.innerHTML = `
       ${topBar({ left: backButton('/'), center: levelHeader() })}
       <div class="results">
-        <div class="emoji">${lesson.passed ? '🎉' : '👍'}</div>
-        <div class="score">${lesson.right} / ${lesson.total}</div>
+        <div class="emoji${lesson.passed ? ' cheer' : ''}">${lesson.passed ? '🎉' : notPassedEmoji()}</div>
+        ${resultDots()}
         <div class="btn-row">
           <button class="btn" data-action="up" data-value="/" aria-label="${T.back}">${icon('back')}</button>
           <button class="btn primary" data-action="retry" aria-label="${T.again}">${icon('refresh')}</button>
         </div>
       </div>`;
+    if (lesson.passed) celebrate();
     return;
   }
   const isLast = lesson.level === LEVEL_DATA.length - 1;
-  const emoji = lesson.passed ? (isLast ? '🏆' : '🎉') : '👍'; // not passed: good effort, try again
+  const emoji = lesson.passed ? (isLast ? '🏆' : '🎉') : notPassedEmoji();
   const toLevels = `<button class="btn" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
   let buttons;
   if (!lesson.passed) {
@@ -1925,10 +2246,37 @@ function renderResult() {
   $app.innerHTML = `
     ${topBar({ left: backButton('/levels'), center: `<div class="level-label"><span>${levelName(lesson.level)}</span></div>` })}
     <div class="results">
-      <div class="emoji">${emoji}</div>
-      <div class="score">${lesson.right} / ${lesson.total}</div>
+      <div class="emoji${lesson.passed ? ' cheer' : ''}">${emoji}</div>
+      ${resultDots()}
       <div class="btn-row">${buttons}</div>
     </div>`;
+  if (lesson.passed) celebrate();
+}
+
+// Celebration for a passed level: colourful confetti falls over the screen for about 3 seconds.
+function celebrate() {
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.confetti').forEach(el => el.remove());
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  layer.setAttribute('aria-hidden', 'true');
+  const colors = ['#F2B705', '#E8553D', '#2FA866', '#3D7BE8', '#B25BE0', '#FF8FB1'];
+  for (let k = 0; k < 70; k++) {
+    const p = document.createElement('i');
+    const size = 7 + Math.random() * 8;
+    p.style.left = Math.random() * 100 + '%';
+    p.style.width = size + 'px';
+    p.style.height = size * (Math.random() < 0.5 ? 0.45 : 1) + 'px';
+    p.style.background = colors[k % colors.length];
+    p.style.borderRadius = Math.random() < 0.3 ? '50%' : '2px';
+    p.style.setProperty('--drift', (Math.random() * 160 - 80) + 'px');
+    p.style.setProperty('--spin', (Math.random() * 900 - 450) + 'deg');
+    p.style.animationDuration = (1.8 + Math.random() * 1.4) + 's';
+    p.style.animationDelay = Math.random() * 0.6 + 's';
+    layer.appendChild(p);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 4000);
 }
 
 /* ---------- Settings ---------- */
@@ -1988,6 +2336,7 @@ function overviewText(text, letters) {
 
 function renderOverview() {
   let grand = 0;
+  const totals = [];
   const cards = LEVEL_DATA.map((lv, i) => {
     const steps = levelSteps(i);
     const own = lv.letters.map(l => l.lower);
@@ -2000,35 +2349,64 @@ function renderOverview() {
     if (steps.includes('learn')) rows.push(`<tr><td>${T.ovLearn}</td><td class="num">–</td></tr>`);
     total += add(T.ovTrace, lv.letters.length * 2, lv.letters.map(l => `${l.upper}, ${l.lower}`).join(' · '));
     const fresh = findFresh(i);
-    total += add(T.ovFind, findLength(i), fresh === findLength(i) ? T.ovAllNew(own.join(' ')) : T.ovSomeNew(fresh, own.join(' ')));
-    total += add(T.ovPair, pairCount(i), lv.stars === 3 ? T.ovAnyLetters : '');
-    if (steps.includes('read')) total += add(T.ovRead, lv.items.length);
+    const findNote = fresh === findLength(i) ? T.ovAllNew(own.join(' ')) : T.ovSomeNew(fresh, own.join(' '));
+    // the choices of this level's questions (2, 2, 3, 3 … or the level's own list)
+    const choiceList = lv.choices || Array.from({ length: findLength(i) }, (_, k) => Math.min(MAX_OPTIONS, 2 + Math.floor(k / 2)));
+    total += add(T.ovFind, findLength(i), findNote.replace('2, 2, 3, 3, 4, 4', choiceList.join(', ')));
+    total += add(T.ovPair, 1, T.ovPairs(pairCount(i)) + (lv.stars === 3 ? ` · ${T.ovAnyLetters}` : ''));
+    // a learning page, not an exercise: shown, but not counted
+    if (steps.includes('read')) rows.push(`<tr><td>${T.ovRead}<small>${T.ovLearnPage(lv.items.length)}</small></td><td class="num">–</td></tr>`);
     if (steps.includes('readquiz')) {
       const rq = readQuizSize(i);
       total += add(T.ovQuiz, rq.length, T.ovChoices(rq.options) + (lv.stars === 3 ? ` · ${T.ovAllSoFar}` : ''));
     }
-    if (steps.includes('match')) total += add(T.ovMatch, matchWords(i).length, lv.stars === 3 ? T.ovAllSoFar : '');
+    if (steps.includes('match')) total += add(T.ovMatch, 1, T.ovPairs(matchWords(i).length) + (lv.stars === 3 ? ` · ${T.ovAllSoFar}` : ''));
     grand += total;
+    totals[i] = total;
 
     const items = lv.items.map(t => {
       const pic = wordPicture(t);
       const picHTML = !pic ? '' : isImageFile(pic) ? `<img src="${pic}" alt="">` : `<span>${pic}</span>`;
       return `<span class="ov-item">${picHTML}${overviewText(t, own)}</span>`;
     }).join('');
-    return `<section class="ov-level${isDone(i) ? ' done' : ''}">
+    return `<section class="ov-level${isDone(i) ? ' done' : ''}" id="ov-${i}">
       <h2><span>${levelName(i)}</span><span class="ov-pass">${Math.round(passRatio(i) * 100)}%</span></h2>
       <div class="ov-items">${items || `<span class="ov-none">${T.ovNoNew}</span>`}</div>
       <table>${rows.join('')}<tr class="ov-total"><td>${T.ovTotal}</td><td class="num">${total}</td></tr></table>
     </section>`;
   }).join('');
 
+  // the summary first: tasks per level, one row per letter (⭐ / ⭐⭐ / ⭐⭐⭐)
+  const summary = letterGroups().map(g => {
+    const byStars = { 1: '', 2: '', 3: '' };
+    // each number jumps to that level's details below
+    g.levels.forEach(i => { byStars[LEVEL_DATA[i].stars] = `<button class="ov-jump" data-action="ovJump" data-value="${i}" aria-label="${levelName(i)}">${totals[i]}</button>`; });
+    return `<tr><td>${levelText(g.levels[0])}</td>${[1, 2, 3].map(n => `<td class="num">${byStars[n]}</td>`).join('')}</tr>`;
+  }).join('');
+
   $app.innerHTML = `
     ${topBar({ left: backButton('/settings'), title: T.overview })}
     <div class="settings overview">
-      <section><p>${T.overviewHelp(LEVEL_DATA.length, grand)}</p></section>
+      <section>
+        <table class="ov-summary">
+          <tr><th></th><th>⭐</th><th>⭐⭐</th><th>⭐⭐⭐</th></tr>
+          ${summary}
+          <tr class="ov-total"><td>Total</td><td class="num" colspan="3">${grand}</td></tr>
+        </table>
+        <p>${T.overviewHelp(LEVEL_DATA.length, grand)}</p>
+      </section>
       ${cards}
-    </div>`;
+    </div>
+    <button class="to-top" data-action="toTop" aria-label="Sus">${icon('top')}</button>`;
+  showToTop();
 }
+
+// The overview is long: a round ↑ button in the corner jumps back to the top (shown once you scroll down).
+function showToTop() {
+  const b = $app.querySelector('.to-top');
+  if (b) b.classList.toggle('show', window.scrollY > 300);
+}
+window.addEventListener('scroll', showToTop, { passive: true });
 
 /* ---------- Recording page (on the laptop, with server.py) ---------- */
 let serverOk = null;
@@ -2087,8 +2465,8 @@ function renderRecorder() {
         return `<div class="rec-item">
           <span class="rec-status">${has ? icon('check') : ''}</span>
           <span class="rec-text${r.small ? ' sentence' : ''}">${r.text}${r.note ? `<small>${r.note}</small>` : ''}</span>
-          ${has && !isRec ? `<button class="rec-btn icon-only" data-action="playRec" data-value="${r.key}" aria-label="Play">${icon('play')}</button>` : ''}
-          <button class="rec-btn${isRec ? ' recording' : ''}" data-action="rec" data-value="${r.key}"${busy ? ' disabled' : ''}>${isRec ? icon('stop') + `<span class="lbl">${T.stop}</span>` : icon('mic') + `<span class="lbl">${T.record}</span>`}</button>
+          ${has ? `<button class="rec-btn icon-only${isRec ? ' hold' : ''}" data-action="playRec" data-value="${r.key}" aria-label="Play"${isRec ? ' disabled' : ''}>${icon('play')}</button>` : ''}
+          <button class="rec-btn rec-main${isRec ? ' recording' : ''}" data-action="rec" data-value="${r.key}"${busy ? ' disabled' : ''}>${isRec ? icon('stop') + `<span class="lbl">${T.stop}</span>` : icon('mic') + `<span class="lbl">${T.record}</span>`}</button>
         </div>`;
       }).join('');
       return rows ? `<section><h2>${sec.title}</h2>${rows}</section>` : '';
@@ -2187,6 +2565,7 @@ async function toWav(blob) {
 const actions = {
   go: path => navigate(path),
   up: parent => goUp(parent),
+  toTop: () => window.scrollTo(0, 0), // a direct jump: smooth scrolling is not reliable on every phone
 
   // alphabet
   openLetter(value) {
@@ -2198,7 +2577,20 @@ const actions = {
   playLetter: value => playLetter(LETTERS[+value]),
   playExample: value => playText(LETTERS[+value].word),
 
+  // overview: scroll to a level's details and light them up for a moment
+  ovJump(value) {
+    const card = document.getElementById('ov-' + value);
+    if (!card) return;
+    card.scrollIntoView({ block: 'start' }); // a direct jump: smooth scrolling is not reliable on every phone
+    card.classList.remove('flash');
+    void card.offsetWidth;
+    card.classList.add('flash');
+  },
   // levels
+  toggleLetter(value) {
+    openGroup = openGroup === +value ? -1 : +value;
+    renderLevels();
+  },
   openLevel(value, button) {
     const i = +value;
     if (!isOpen(i)) {
@@ -2236,7 +2628,7 @@ const actions = {
     playVoice('trace');
     playDemo();
   },
-  pairVoice: () => playVoice('pair'),
+  pairVoice: () => { speakInstruction('pair'); const t = playToken; setTimeout(() => { if (t === playToken && lesson && stepName() === 'pair') playPairDemo(); }, 700); },
   traceCheck: () => traceCheck(),
   traceSkip: () => traceNextLetter(),
   listen: () => playQuestion(currentQuiz()),
@@ -2244,7 +2636,7 @@ const actions = {
   pick: (value, button) => { stopPairDemo(); pick(value, button); },
   pickMatch: value => { stopPairDemo(); pickMatch(value); },
   pairDemo: () => playPairDemo(),
-  matchVoice: () => playVoice('match'),
+  matchVoice: () => { speakInstruction('match'); const t = playToken; setTimeout(() => { if (t === playToken && lesson && stepName() === 'match') playPairDemo(); }, 700); },
   readItem: value => presentOne(value), // s… u… su
   readAll: () => readAllAloud(),
   nextStep: () => nextStep(),
@@ -2258,6 +2650,7 @@ const actions = {
     lesson.step = lesson.steps.indexOf('find') - 1;
     lesson.right = 0;
     lesson.total = 0;
+    lesson.log = [];
     nextStep();
   },
   nextLevel() {
@@ -2299,10 +2692,32 @@ const actions = {
   playRec: key => playKey(key, '', true),
 };
 
+// Stops the sound and what goes with it (highlighted syllables, waves, the pairing demo).
+function silence() {
+  stopSound();
+  clearPresentation();
+  stopPairDemo();
+  $app.querySelectorAll('.listen-btn.ripple').forEach(b => b.classList.remove('ripple'));
+}
+
+// Buttons that only play a sound: they can't be pressed again while a sound is playing.
+const SOUND_ACTIONS = new Set(['listen', 'pairVoice', 'matchVoice', 'readAll', 'readItem',
+  'playLetter', 'playExample', 'playShown', 'playLearnWord']);
+
 $app.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const fn = actions[el.dataset.action];
+  if (SOUND_ACTIONS.has(el.dataset.action)) {
+    if (soundPlaying()) {
+      // pressed while a sound plays: stop it; it can start again half a second later
+      silence();
+      lastSoundPress = performance.now();
+      return;
+    }
+    if (soundTooSoon()) return;
+    lastSoundPress = performance.now();
+  }
   if (fn) fn(el.dataset.value, el);
 });
 

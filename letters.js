@@ -58,36 +58,52 @@ const LETTERS = [
 //   letters   : the letter(s) of this level ('m', or 'm n' for two)
 //   stars     : 1, 2 or 3 (see above)
 //   find      : (optional) questions in "find the letter by sound";
-//               if left out: ⭐ 4, ⭐⭐ 5, ⭐⭐⭐ 6
+//               if left out: ⭐ 4, ⭐⭐ 5, ⭐⭐⭐ 6 (choosing from 2, 2, 3, 3, 4, 4 letters)
+//   choices   : (optional) how many letters to choose from in each of those questions,
+//               e.g. [2, 3, 3, 4]; if left out: 2, 2, 3, 3, 4, 4
 //   quiz      : (optional) questions in the syllable quiz;
-//               if left out: ⭐ 4, ⭐⭐ twice the new syllables/words (3 to 6), ⭐⭐⭐ 6
+//               if left out: ⭐ 4, ⭐⭐ 5, ⭐⭐⭐ 6
 //   syllables : NEW syllables to read and hear (only letters learned so far)
 //   words     : NEW short words to read and hear (only letters learned so far)
 // At most 2 new syllables and words together per level.
 // Leave syllables / words empty ([]) when there are none.
 
 const LEVELS = [
-  { letters: 'i', stars: 1, syllables: [],                         words: [] },
+  // letter order: a, m, i, n, d, e
+  { letters: 'a', stars: 1, find: 6, syllables: [],                words: [] },  // one letter alone: nothing to combine yet
 
-  { letters: 's', stars: 1, syllables: ['si', 'is'],               words: [] },
-  { letters: 's', stars: 2, syllables: ['si', 'is'],               words: [] },  // no other syllables possible yet: repeats
+  { letters: 'm', stars: 1, find: 6, syllables: ['ma'],            words: [] },
+  { letters: 'm', stars: 2, find: 6, syllables: ['am'],            words: ['mama'] },
 
-  { letters: 'u', stars: 1, syllables: [],                         words: ['sus', 'Isus'] },
-  { letters: 'u', stars: 2, quiz: 4, syllables: ['su', 'us'],      words: [] },
-  { letters: 'u', stars: 3, syllables: [],                         words: [] },  // nothing new possible: the quiz mixes all earlier ones
+  { letters: 'i', stars: 1, syllables: ['mi'],                     words: [] },
+  { letters: 'i', stars: 2, syllables: ['ia'],                     words: [] },
+  { letters: 'i', stars: 3, syllables: ['ai'],                     words: ['Mai'] },
 
-  { letters: 'm', stars: 1, syllables: ['mi', 'mu'],               words: [] },
-  { letters: 'm', stars: 2, quiz: 4, syllables: ['um'],            words: ['mii'] },
-  { letters: 'm', stars: 3, syllables: ['im'],                     words: [] },
+  { letters: 'n', stars: 1, syllables: ['an', 'ni'],               words: [] },
+  { letters: 'n', stars: 2, syllables: [],                         words: ['Ana', 'ani'] },
+  { letters: 'n', stars: 3, syllables: [],                         words: ['inima'] },
 
-  { letters: 'a', stars: 1, syllables: ['ma', 'sa'],               words: [] },
-  { letters: 'a', stars: 2, syllables: ['am'],                     words: ['mama'] },
-  { letters: 'a', stars: 3, syllables: [],                         words: ['ai', 'sau'] },
+  { letters: 'd', stars: 1, syllables: ['da', 'di'],               words: [] },
+  { letters: 'd', stars: 2, syllables: [],                         words: ['dai', 'iad'] },
+  { letters: 'd', stars: 3, syllables: [],                         words: ['Nadia'] },
 
-  { letters: 'n', stars: 1, syllables: ['nu', 'un'],               words: [] },
-  { letters: 'n', stars: 2, syllables: [],                         words: ['nas', 'Ana'] },
-  { letters: 'n', stars: 3, syllables: [],                         words: ['sun', 'Manu'] },
+  { letters: 'e', stars: 1, syllables: ['me', 'ne'],               words: [] },
+  { letters: 'e', stars: 2, syllables: ['ea'],                     words: ['mea'] },
+  { letters: 'e', stars: 3, syllables: [],                         words: ['mine', 'Ema'] },
 ];
+
+// Letters that look alike (small letters). In "find the letter by sound", when one of them is
+// asked and the other is already learned, both are among the choices (shown as small letters),
+// so the learner practises telling them apart. Add more pairs later, e.g. ['b', 'd'], ['n', 'm'].
+const SIMILAR_LETTERS = [
+  ['a', 'd'],
+];
+
+// Words that are split into syllables wrongly by the app's simple rule can be split
+// here by hand, with "-" between the syllables (the app shows them as Na + di + a).
+const SYLLABLE_SPLIT = {
+  Nadia: 'Na-di-a',
+};
 
 // ---------------------------------------------------------------------
 // 3. PICTURES for the words in the levels (shown on the words screen)
@@ -101,8 +117,9 @@ const WORD_PICTURES = {
   Isus: 'pictures/isus.jpg',  // icon of Christ Pantocrator, Russian, 19th century (public domain,
                                // Wikimedia Commons: File:Christ_Pantocrator_Russian_icon.jpg)
   mii:  'pictures/mii.svg',   // thousands: 1000 and coins (drawn for Bibcit)
-  mai:  'pictures/mai.svg',   // the month of May: a calendar page (drawn for Bibcit)
+  Mai:  'pictures/mai.svg',   // the month of May: a calendar page (drawn for Bibcit)
   mama: '👩‍👧',                // mother and child
+  nu:   '❌',                 // no
   nas:  '👃',                 // nose
   Ana:  '👧',                 // a girl's name
   una:  '1️⃣',                 // one
