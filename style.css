@@ -958,6 +958,8 @@ body { overflow-x: hidden; }
 #app.turn-back { animation: turn-back .3s cubic-bezier(.3,.6,.3,1); }
 .page-old, #app.turn-next, #app.turn-back { will-change: transform; backface-visibility: hidden; }
 .page-old .flying, .page-old .confetti { display: none; }   /* moving bits are not copied along */
+.page-old * { animation: none !important; }   /* the old page is a still picture: nothing to redraw */
+.page-old.turn-hold, #app.turn-hold { animation-play-state: paused; }
 @keyframes page-out      { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(-100vw, 0, 0); } }
 @keyframes page-out-back { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(100vw, 0, 0); } }
 @keyframes turn-next     { from { transform: translate3d(100vw, 0, 0); }  to   { transform: translate3d(0, 0, 0); } }

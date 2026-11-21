@@ -602,16 +602,25 @@ function pageTurn(dir) {
   const from = $app.querySelectorAll('canvas'), to = copy.querySelectorAll('canvas');
   to.forEach((c, k) => { try { c.getContext('2d').drawImage(from[k], 0, 0); } catch (e) {} });
   old.appendChild(copy);
-  old.addEventListener('animationend', () => old.remove());
-  setTimeout(() => old.remove(), 600); // also when the animation never runs (e.g. a hidden tab)
+  old.addEventListener('animationend', e => { if (e.target === old) old.remove(); });
+  setTimeout(() => { // also when the animation never runs (e.g. a hidden tab): end it anyway
+    old.remove();
+    if (!document.querySelector('.page-old')) $app.classList.remove('turn-next', 'turn-back', 'turn-hold');
+  }, 1000);
   document.body.appendChild(old);
   pageScroll = 0;
   $app.classList.remove('turn-next', 'turn-back');
   void $app.offsetWidth; // restart the animation
-  $app.classList.add(back ? 'turn-back' : 'turn-next');
+  // Both pages wait still at their start for two frames, so a slower phone can draw the new page
+  // first; otherwise the slide stalls with an empty page and then jumps to the end.
+  old.classList.add('turn-hold');
+  $app.classList.add(back ? 'turn-back' : 'turn-next', 'turn-hold');
+  const go = () => { old.classList.remove('turn-hold'); $app.classList.remove('turn-hold'); };
+  requestAnimationFrame(() => requestAnimationFrame(go));
+  setTimeout(go, 120); // frames are not drawn when the app is in the background: start anyway
 }
 $app.addEventListener('animationend', e => {
-  if (e.target === $app) $app.classList.remove('turn-next', 'turn-back');
+  if (e.target === $app) $app.classList.remove('turn-next', 'turn-back', 'turn-hold');
 });
 
 // Position of an element in the page's layout, ignoring animations (getBoundingClientRect
