@@ -351,9 +351,11 @@ mark { background: none; color: var(--mark); }
 .letter-box .earned { font-size: clamp(1.25rem, 5.6vw, 1.7rem); gap: 2px; min-height: 1.45rem; display: flex; align-items: center; }
 .letter-box .earned i { font-style: normal; filter: grayscale(1) brightness(.8); opacity: .35; }  /* shadowy until collected */
 .letter-box .earned i.gold { filter: none; opacity: 1; }
-.letter-box.open { border-color: var(--accent); }
 .letter-box .earned .icon { width: 25px; height: 25px; stroke-width: 2.5; }
 .letter-box.current { background: var(--accent-soft); }
+/* opened (its sublevels shown beside it): the big box goes plain, so only the next sublevel is
+   blue and it is clear what to press */
+.letter-box.open, .letter-box.current.open { background: var(--card); border-color: transparent; }
 /* a letter that is open but not started yet: a "NOU" tape across the corner */
 .letter-box { overflow: hidden; }
 .ribbon {
@@ -482,7 +484,7 @@ mark { background: none; color: var(--mark); }
 }
 .level-label .stars { font-size: .75em; letter-spacing: -.05em; }
 /* the level's stars in the top right corner, with the word "dificultate" under them */
-.difficulty { width: 60px; flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-right: 2px; line-height: 1; }
+.difficulty { width: 60px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-right: 2px; line-height: 1; }
 .difficulty .stars { font-size: 1.05rem; letter-spacing: -.08em; white-space: nowrap; }
 .difficulty small { font-size: .72rem; color: var(--muted); }
 .dots.steps { margin: 4px 0 10px; }
@@ -731,20 +733,74 @@ mark { background: none; color: var(--mark); }
   text-align: center;
 }
 .results .emoji { font-size: 7rem; line-height: 1; }
-/* passed: the picture jumps in, and confetti falls over the screen */
-.results .emoji.cheer { animation: cheer 1s cubic-bezier(.3, 1.6, .5, 1) both; }
-@keyframes cheer {
-  0% { transform: scale(0) rotate(-30deg); opacity: 0; }
-  60% { transform: scale(1.25) rotate(10deg); opacity: 1; }
-  80% { transform: scale(.95) rotate(-4deg); }
-  100% { transform: scale(1) rotate(0); }
+/* Passed: a party popper (the "Party Popper" design) shakes, bursts with streamers and sparkles,
+   and shoots confetti that rains down and stays on the floor. It plays once (--dur), not in a loop. */
+.popper { --dur: 5.2s; width: min(230px, 58vw); aspect-ratio: 1; flex: none; position: relative; }
+.popper svg { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.popper svg * { transform-box: view-box; }
+@keyframes pp-body {
+  0% { transform: none }
+  11.54% { transform: rotate(-5deg) scale(1.02, .96) }
+  16.73% { transform: rotate(-9deg) scale(1.05, .9) }
+  18.46% { transform: translate(0, 18px) rotate(5deg) scale(.94, 1.09) }
+  22.50% { transform: translate(0, -5px) rotate(-3deg) scale(1.02, .97) }
+  27.12% { transform: translate(0, 2px) rotate(1.5deg) scale(.99, 1.01) }
+  32.31%, 100% { transform: none }
 }
-.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; }
-.confetti i { position: absolute; top: -20px; animation-name: confetti-fall; animation-timing-function: cubic-bezier(.25, .6, .45, 1); animation-fill-mode: both; }
-@keyframes confetti-fall {
-  from { transform: translate(0, 0) rotate(0); opacity: 1; }
-  85% { opacity: 1; }
-  to { transform: translate(var(--drift), 105vh) rotate(var(--spin)); opacity: 0; }
+.pp-body { animation: pp-body var(--dur) cubic-bezier(.3, .7, .3, 1) both; transform-origin: 0px 140px; }
+@keyframes pp-lip { 0%, 16.73% { transform: scale(1) } 18.46% { transform: scale(1.12, 1.25) } 23.08% { transform: scale(.97) } 28.85%, 100% { transform: scale(1) } }
+.pp-lip { animation: pp-lip var(--dur) ease-out both; transform-origin: 0px -60px; }
+@keyframes pp-flash { 0%, 17.31% { transform: scale(0); opacity: 0 } 18.46% { opacity: 1 } 25.38%, 100% { transform: scale(1.7); opacity: 0 } }
+.pp-flash { animation: pp-flash var(--dur) ease-out both; transform-origin: 342px 288px; }
+@keyframes pp-stream {
+  0%, 17.31% { stroke-dashoffset: 100; opacity: 1 }
+  31.15% { stroke-dashoffset: 0 }
+  65.38% { stroke-dashoffset: 0; opacity: 1 }
+  76.92%, 100% { stroke-dashoffset: -100; opacity: 0 }
+}
+.pp-s { fill: none; stroke-width: 7; stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 100;
+  animation: pp-stream var(--dur) cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes pp-sway { 0%, 23.08% { transform: translate(0, 0) } 50% { transform: translate(6px, 10px) } 76.92%, 100% { transform: translate(14px, 34px) } }
+.pp-sway { animation: pp-sway var(--dur) ease-in-out both; }
+@keyframes pp-spark { 0%, 18.46% { transform: scale(0) rotate(0deg); opacity: 0 } 23.08% { transform: scale(1.15) rotate(45deg); opacity: 1 } 30% { transform: scale(.9) rotate(70deg); opacity: 1 } 36.92%, 100% { transform: scale(0) rotate(110deg); opacity: 0 } }
+.pp-k { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pp-spark var(--dur) ease-out both; }
+
+/* the confetti: shot from the popper's mouth (the anchor), it flies out, flutters down and lands */
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 50; --dur: 5.2s; }
+.confetti .anchor { position: absolute; width: 0; height: 0; }
+.cf { position: absolute; left: 0; top: 0; opacity: 0; animation-duration: var(--dur); animation-delay: var(--d); animation-fill-mode: both; }
+.cf-sw, .cf-sp { animation-duration: var(--dur); animation-delay: var(--d); animation-fill-mode: both; }
+.cf.a { animation-name: cf-fly-a; } .cf.a .cf-sw { animation-name: cf-sw-a; animation-timing-function: ease-in-out; } .cf.a .cf-sp { animation-name: cf-sp-a; animation-timing-function: ease-out; }
+.cf.b { animation-name: cf-fly-b; } .cf.b .cf-sw { animation-name: cf-sw-b; animation-timing-function: ease-in-out; } .cf.b .cf-sp { animation-name: cf-sp-b; animation-timing-function: ease-out; }
+.cf.c { animation-name: cf-fly-c; } .cf.c .cf-sw { animation-name: cf-sw-c; animation-timing-function: ease-in-out; } .cf.c .cf-sp { animation-name: cf-sp-c; animation-timing-function: ease-out; }
+@keyframes cf-fly-a {
+  0%, 17.69% { transform: translate(0, 0) scale(0); opacity: 0 }
+  17.88% { transform: translate(0, 0) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.1, .75, .3, 1) }
+  26.54% { transform: translate(var(--ax), var(--ay)) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.4, .05, .75, .95) }
+  67.31%, 100% { transform: translate(var(--lx), var(--ly)) scale(1); opacity: 1 }
+}
+@keyframes cf-fly-b {
+  0%, 17.69% { transform: translate(0, 0) scale(0); opacity: 0 }
+  17.88% { transform: translate(0, 0) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.1, .75, .3, 1) }
+  26.54% { transform: translate(var(--ax), var(--ay)) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.4, .05, .75, .95) }
+  76.92%, 100% { transform: translate(var(--lx), var(--ly)) scale(1); opacity: 1 }
+}
+@keyframes cf-fly-c {
+  0%, 17.69% { transform: translate(0, 0) scale(0); opacity: 0 }
+  17.88% { transform: translate(0, 0) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.1, .75, .3, 1) }
+  26.54% { transform: translate(var(--ax), var(--ay)) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.4, .05, .75, .95) }
+  86.54%, 100% { transform: translate(var(--lx), var(--ly)) scale(1); opacity: 1 }
+}
+@keyframes cf-sw-a { 0%, 26.54% { transform: translateX(0) } 34.69% { transform: translateX(var(--sw)) } 42.85% { transform: translateX(calc(var(--sw) * -0.8)) } 51% { transform: translateX(calc(var(--sw) * 0.55)) } 59.15% { transform: translateX(calc(var(--sw) * -0.25)) } 67.31%, 100% { transform: translateX(0) } }
+@keyframes cf-sw-b { 0%, 26.54% { transform: translateX(0) } 36.62% { transform: translateX(var(--sw)) } 46.69% { transform: translateX(calc(var(--sw) * -0.8)) } 56.77% { transform: translateX(calc(var(--sw) * 0.55)) } 66.85% { transform: translateX(calc(var(--sw) * -0.25)) } 76.92%, 100% { transform: translateX(0) } }
+@keyframes cf-sw-c { 0%, 26.54% { transform: translateX(0) } 38.54% { transform: translateX(var(--sw)) } 50.54% { transform: translateX(calc(var(--sw) * -0.8)) } 62.54% { transform: translateX(calc(var(--sw) * 0.55)) } 74.54% { transform: translateX(calc(var(--sw) * -0.25)) } 86.54%, 100% { transform: translateX(0) } }
+@keyframes cf-sp-a { 0%, 17.88% { transform: rotate(0deg) rotateX(0deg) } 26.54% { transform: rotate(calc(var(--r) * 0.35)) rotateX(calc(var(--fx) * 0.3)) } 67.31%, 100% { transform: rotate(var(--r)) rotateX(var(--fx)) } }
+@keyframes cf-sp-b { 0%, 17.88% { transform: rotate(0deg) rotateX(0deg) } 26.54% { transform: rotate(calc(var(--r) * 0.35)) rotateX(calc(var(--fx) * 0.3)) } 76.92%, 100% { transform: rotate(var(--r)) rotateX(var(--fx)) } }
+@keyframes cf-sp-c { 0%, 17.88% { transform: rotate(0deg) rotateX(0deg) } 26.54% { transform: rotate(calc(var(--r) * 0.35)) rotateX(calc(var(--fx) * 0.3)) } 86.54%, 100% { transform: rotate(var(--r)) rotateX(var(--fx)) } }
+@media (prefers-reduced-motion: reduce) {
+  .pp-body, .pp-lip, .pp-flash, .pp-sway, .pp-k, .cf-sw, .cf-sp { animation: none !important; }
+  .pp-s { animation: none !important; stroke-dashoffset: 0; }
+  .cf { animation: none !important; opacity: 1; transform: translate(var(--lx), var(--ly)); }
 }
 .results .score { font-size: 3.2rem; font-weight: 700; }
 /* the result without numbers: a dot per task, popping in one after the other */

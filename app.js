@@ -554,7 +554,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 15;
+const APP_VERSION = 25;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -635,9 +635,30 @@ function layoutLeft(el) {
   for (; el; el = el.offsetParent) x += el.offsetLeft;
   return x;
 }
+function layoutTop(el) {
+  let y = 0;
+  for (; el; el = el.offsetParent) y += el.offsetTop;
+  return y;
+}
+
+// On a phone: full screen (the phone's own buttons and top bar hidden) only during a task, in a
+// level or in Exersează; on the other pages they stay. Not on the laptop (mouse). Browsers allow
+// it only right after a tap, which is how tasks are opened.
+const onPhone = () => window.matchMedia && matchMedia('(pointer: coarse)').matches;
+function fullScreenInTasks(path) {
+  const el = document.documentElement;
+  if (!onPhone() || !el.requestFullscreen) return;
+  const inTask = /^\/level\/\d+$|^\/exercitiu$/.test(path);
+  try {
+    if (inTask && !document.fullscreenElement) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    else if (!inTask && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch (e) {}
+}
 
 function render(entering = false) {
   const path = currentPath();
+  fullScreenInTasks(path);
+  clearConfetti();
   if (shownPath !== null && path !== shownPath) pageTurn(pageDepth(path) < pageDepth(shownPath) ? 'back' : 'next');
   shownPath = path;
   let m;
@@ -797,10 +818,12 @@ function renderLevels() {
     const state = (!open ? ' locked' : g.levels.includes(next) ? ' current' : '') + (shown ? ' open' : '');
     const mark = !open ? icon('lock')
       : g.levels.map((_, n) => `<i class="${n < earned ? 'gold' : ''}">⭐</i>`).join(''); // one star per sublevel (Ii 1, Ss 2)
+    // the sublevel to press: the app's next level, or else (e.g. an extra ⭐⭐⭐ left) the first open one not done
+    const focus = g.levels.includes(next) ? next : g.levels.find(i => isOpen(i) && !isDone(i));
     const subs = g.levels.map(i => {
       const done = isDone(i);
       const subOpen = isOpen(i);
-      const st = !subOpen ? ' locked' : i === next ? ' current' : '';
+      const st = !subOpen ? ' locked' : i === focus ? ' current' : '';
       const starRow = Array.from({ length: LEVEL_DATA[i].stars }, () => `<i class="${done ? 'gold' : ''}">⭐</i>`).join('');
       return `<button class="sub-level${st}" data-action="openLevel" data-value="${i}" aria-label="${levelName(i)}">
         <span class="sub-stars">${starRow}</span>
@@ -970,6 +993,7 @@ function renderLevel(i, entering) {
 
 // Move on to the next step of the level.
 function nextStep(turn = 'next') {
+  clearConfetti();
   lesson.step++;
   lesson.pos = 0;
   lesson.part = 0;
@@ -1758,6 +1782,35 @@ function placeBubbleTip() {
 }
 window.addEventListener('resize', placeBubbleTip);
 
+// When the screen changes size (e.g. full screen starts just after a task opens), the tracing
+// area is fitted again, as long as nothing has been drawn yet.
+function refitTrace() {
+  if (!lesson || stepName() !== 'trace' || !trace || !trace.layout || trace.inked || trace.done) return;
+  const wrap = $app.querySelector('.trace-wrap');
+  const g = wrap && wrap.querySelector('.trace-guide');
+  if (!g) return;
+  const ratio = window.devicePixelRatio || 1;
+  if (Math.round(g.offsetWidth * ratio) === g.width && Math.round(g.offsetHeight * ratio) === g.height) return;
+  const { l, small } = lesson.traceList[lesson.pos];
+  const guide = sizeCanvas(g);
+  const layout = traceLayout(l, small ? l.lower : l.upper, guide.W, guide.H);
+  if (!layout) return;
+  trace.layout = layout;
+  drawGuide(guide.ctx, layout);
+  stopDemo();
+  trace.demo = sizeCanvas(wrap.querySelector('.trace-demo')).ctx;
+  const ink = sizeCanvas(wrap.querySelector('.trace-canvas')).ctx; // (resizing resets the pen: set it again)
+  ink.lineCap = 'round';
+  ink.lineJoin = 'round';
+  ink.lineWidth = layout.width * 0.9;
+  ink.strokeStyle = ink.fillStyle = cssVar('--accent') || '#1E4FB5';
+  if (!lesson.practice && LEVEL_DATA[lesson.level].stars < 3) playDemo();
+}
+let refitTimer = 0;
+const refitSoon = () => { clearTimeout(refitTimer); refitTimer = setTimeout(() => { refitTrace(); placeBubbleTip(); }, 150); };
+window.addEventListener('resize', refitSoon);
+document.addEventListener('fullscreenchange', refitSoon);
+
 
 
 // Saves one answer for a letter (its last 10 are kept): how well it is known (Alfabetul dots)
@@ -2258,12 +2311,69 @@ function finishLevel() {
   }
 }
 
+// The party popper of the passed result screen (from the "Party Popper" design). Its mouth is at
+// 342,288 of the drawing; the view is cropped to the popper and its streamers.
+const POPPER_MOUTH = { x: (342 - 180) / 440, y: (288 - 30) / 440 };  // as a part of the width / height
+const POPPER_SVG = `<svg viewBox="180 30 440 440" aria-hidden="true">
+  <defs>
+  <linearGradient id="ppCone" gradientUnits="userSpaceOnUse" x1="-70" y1="0" x2="70" y2="0">
+  <stop offset="0" stop-color="#FFE07A"/>
+  <stop offset=".45" stop-color="#FDBA2C"/>
+  <stop offset="1" stop-color="#D9820F"/>
+  </linearGradient>
+  <radialGradient id="ppHole" cx="0" cy="-60" r="70" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#3A1C05"/>
+  <stop offset=".7" stop-color="#7A3F0B"/>
+  <stop offset="1" stop-color="#B8650F"/>
+  </radialGradient>
+  <radialGradient id="ppFlash" cx="342" cy="288" r="70" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#FFFFFF"/>
+  <stop offset=".35" stop-color="#FFF1B0"/>
+  <stop offset="1" stop-color="#FFD54A" stop-opacity="0"/>
+  </radialGradient>
+  <clipPath id="ppClip"><path d="M-70 -60 L0 140 L70 -60 Z"/></clipPath>
+  </defs>
+  <g transform="translate(300 330) rotate(45)">
+  <g class="pp-body">
+  <path d="M-70 -60 L0 140 L70 -60 Z" fill="url(#ppCone)"/>
+  <g clip-path="url(#ppClip)">
+  <polygon points="-90,-24 90,-50 90,-28 -90,-2" fill="#3D6FE0"/>
+  <polygon points="-90,22 90,-4 90,18 -90,44" fill="#2F5BCC"/>
+  <polygon points="-90,68 90,42 90,62 -90,88" fill="#3D6FE0"/>
+  <polygon points="-90,108 90,82 90,98 -90,124" fill="#2F5BCC"/>
+  <path d="M-50 -52 L-4 112" stroke="#FFFFFF" stroke-opacity=".38" stroke-width="9" stroke-linecap="round"/>
+  <path d="M70 -60 L0 140 L22 -60 Z" fill="#7A3F0B" fill-opacity=".18"/>
+  </g>
+  <g class="pp-lip">
+  <ellipse cx="0" cy="-60" rx="70" ry="22" fill="url(#ppHole)"/>
+  <ellipse cx="0" cy="-60" rx="70" ry="22" fill="none" stroke="#FFE9A3" stroke-width="7"/>
+  <path d="M-62 -50 A70 22 0 0 0 40 -42" fill="none" stroke="#FFFFFF" stroke-opacity=".6" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  </g>
+  </g>
+  <circle class="pp-flash" cx="342" cy="288" r="70" fill="url(#ppFlash)"/>
+  <g class="pp-sway">
+  <path class="pp-s" pathLength="100" stroke="#F0379A" d="M342 288 C380 230 352 196 396 172 S452 128 428 96 S468 52 504 62"/>
+  <path class="pp-s" pathLength="100" stroke="#3AA0F0" style="animation-delay: .04s" d="M342 288 C400 272 418 232 462 242 S520 212 542 182 S584 170 604 196"/>
+  <path class="pp-s" pathLength="100" stroke="#3AA0F0" style="animation-delay: .07s" d="M342 288 C352 222 300 204 312 152 S282 92 322 68"/>
+  <path class="pp-s" pathLength="100" stroke="#F0379A" style="animation-delay: .02s" d="M342 288 C410 302 448 282 480 302 S540 324 572 292"/>
+  </g>
+  <g fill="#FFE07A">
+  <path class="pp-k" style="animation-delay: .02s" d="M420 196 C422 206 424 208 434 210 C424 212 422 214 420 224 C418 214 416 212 406 210 C416 208 418 206 420 196 Z"/>
+  <path class="pp-k" style="animation-delay: .08s" d="M500 268 C502 276 503 277 511 279 C503 281 502 282 500 290 C498 282 497 281 489 279 C497 277 498 276 500 268 Z"/>
+  <path class="pp-k" style="animation-delay: .12s" d="M330 160 C332 168 333 169 341 171 C333 173 332 174 330 182 C328 174 327 173 319 171 C327 169 328 168 330 160 Z"/>
+  <path class="pp-k" fill="#F0379A" style="animation-delay: .05s" d="M392 300 C393 306 394 307 400 308 C394 309 393 310 392 316 C391 310 390 309 384 308 C390 307 391 306 392 300 Z"/>
+  </g>
+</svg>`;
+
 function renderResult() {
+  // passed: the party popper bursts; not passed: a kind emoji (👍 / 🌱)
+  const face = lesson.passed ? `<div class="popper">${POPPER_SVG}</div>` : `<div class="emoji">${notPassedEmoji()}</div>`;
   if (lesson.practice) {
     $app.innerHTML = `
       ${topBar({ left: backButton('/'), center: levelHeader() })}
       <div class="results">
-        <div class="emoji${lesson.passed ? ' cheer' : ''}">${lesson.passed ? '🎉' : notPassedEmoji()}</div>
+        ${face}
         ${resultDots()}
         <div class="btn-row">
           <button class="btn" data-action="up" data-value="/" aria-label="${T.back}">${icon('back')}</button>
@@ -2273,8 +2383,6 @@ function renderResult() {
     if (lesson.passed) celebrate();
     return;
   }
-  const isLast = lesson.level === LEVEL_DATA.length - 1;
-  const emoji = lesson.passed ? (isLast ? '🏆' : '🎉') : notPassedEmoji();
   const toLevels = `<button class="btn" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
   let buttons;
   if (!lesson.passed) {
@@ -2286,38 +2394,85 @@ function renderResult() {
   $app.innerHTML = `
     ${topBar({ left: backButton('/levels'), center: `<div class="level-label"><span>${levelName(lesson.level)}</span></div>` })}
     <div class="results">
-      <div class="emoji${lesson.passed ? ' cheer' : ''}">${emoji}</div>
+      ${face}
       ${resultDots()}
       <div class="btn-row">${buttons}</div>
     </div>`;
   if (lesson.passed) celebrate();
 }
 
-// Celebration for a passed level: colourful confetti falls over the screen for about 3 seconds.
+// Confetti for a passed result: shot out of the popper's mouth with its bang, it flutters down and
+// stays lying on the ground until the result screen is left (see clearConfetti). Timed with the
+// popper's own animation (both last CELEBRATE_MS and start together). Right after it ends, the
+// popper pops again with a new handful of confetti, as long as the result screen is open.
+const CELEBRATE_MS = 5200, CELEBRATE_PAUSE_MS = 0, CELEBRATE_KEEP = 3; // bursts lying on the ground
+let celebrateTimer = 0;
 function celebrate() {
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  document.querySelectorAll('.confetti').forEach(el => el.remove());
+  clearConfetti();
+  const pop = $app.querySelector('.popper');
+  if (!pop) return;
   const layer = document.createElement('div');
   layer.className = 'confetti';
   layer.setAttribute('aria-hidden', 'true');
-  const colors = ['#F2B705', '#E8553D', '#2FA866', '#3D7BE8', '#B25BE0', '#FF8FB1'];
-  for (let k = 0; k < 70; k++) {
-    const p = document.createElement('i');
-    const size = 7 + Math.random() * 8;
-    p.style.left = Math.random() * 100 + '%';
-    p.style.width = size + 'px';
-    p.style.height = size * (Math.random() < 0.5 ? 0.45 : 1) + 'px';
-    p.style.background = colors[k % colors.length];
-    p.style.borderRadius = Math.random() < 0.3 ? '50%' : '2px';
-    p.style.setProperty('--drift', (Math.random() * 160 - 80) + 'px');
-    p.style.setProperty('--spin', (Math.random() * 900 - 450) + 'deg');
-    p.style.animationDuration = (1.8 + Math.random() * 1.4) + 's';
-    p.style.animationDelay = Math.random() * 0.6 + 's';
-    layer.appendChild(p);
-  }
   document.body.appendChild(layer);
-  setTimeout(() => layer.remove(), 4000);
+  confettiBurst(pop, layer);
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const again = () => {
+    if (!pop.isConnected || !layer.isConnected) return;
+    // the popper's own animations start over, and a new burst flies out
+    pop.getAnimations({ subtree: true }).forEach(an => { an.currentTime = 0; an.play(); });
+    // not too many on the floor: the oldest burst slowly fades away
+    const bursts = layer.querySelectorAll('.anchor:not(.fading)');
+    for (let k = 0; k <= bursts.length - CELEBRATE_KEEP; k++) {
+      const old = bursts[k];
+      old.classList.add('fading');
+      old.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1200, easing: 'ease-in', fill: 'forwards' })
+        .onfinish = () => old.remove();
+      setTimeout(() => old.remove(), 1500); // in case the fade never gets to finish (page in the background)
+    }
+    confettiBurst(pop, layer);
+    celebrateTimer = setTimeout(again, CELEBRATE_MS + CELEBRATE_PAUSE_MS);
+  };
+  celebrateTimer = setTimeout(again, CELEBRATE_MS + CELEBRATE_PAUSE_MS);
 }
+function confettiBurst(pop, layer) {
+  const W = window.innerWidth, H = window.innerHeight;
+  // where the mouth is on the screen, from the layout (the page may still be turning)
+  const x = layoutLeft(pop) + pop.offsetWidth * POPPER_MOUTH.x;
+  const y = layoutTop(pop) - window.scrollY + pop.offsetHeight * POPPER_MOUTH.y;
+  const anchor = document.createElement('div');
+  anchor.className = 'anchor';
+  anchor.style.left = x + 'px';
+  anchor.style.top = y + 'px';
+  const colors = ['#E8503A', '#2E9E5B', '#3D7BE8', '#F4B400', '#F98DB0', '#A35BE0'];
+  const shapes = [[9, 5, '1px'], [10, 16, '2px'], [10, 10, '50%'], [5, 18, '2px'], [12, 12, '2px']];
+  const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+  for (let k = 0; k < 56; k++) {
+    const [w, h, radius] = shapes[k % shapes.length];
+    const piece = document.createElement('div');
+    piece.className = 'cf ' + 'abc'[k % 3];
+    const ax = rnd(-0.45, 0.45) * W + rnd(0, 40);           // burst: up and out of the mouth
+    const ay = rnd(-340, -60);
+    const lx = Math.min(W - x - 14, Math.max(14 - x, ax + rnd(-60, 60))); // lands inside the screen
+    const pile = rnd(6, 26);                                  // how high it lies above the bottom edge
+    const s = piece.style;
+    s.setProperty('--ax', ax + 'px');
+    s.setProperty('--ay', ay + 'px');
+    s.setProperty('--lx', lx + 'px');
+    s.setProperty('--ly', (H - y - pile) + 'px');
+    s.setProperty('--sw', rnd(14, 34) * (Math.random() < 0.5 ? -1 : 1) + 'px');
+    s.setProperty('--r', rnd(-720, 720) + 'deg');
+    s.setProperty('--fx', rnd(0, 2) * 180 + 'deg');
+    s.setProperty('--d', rnd(0, 0.09) + 's');
+    piece.innerHTML = `<div class="cf-sw"><div class="cf-sp" style="width:${w}px;height:${h}px;margin:${-h / 2}px 0 0 ${-w / 2}px;background:${colors[k % colors.length]};border-radius:${radius}"></div></div>`;
+    anchor.appendChild(piece);
+  }
+  layer.appendChild(anchor);
+}
+const clearConfetti = () => {
+  clearTimeout(celebrateTimer);
+  document.querySelectorAll('.confetti').forEach(el => el.remove());
+};
 
 /* ---------- Settings ---------- */
 function allSoundKeys() {
@@ -2682,12 +2837,13 @@ const actions = {
   nextStep: () => nextStep(),
   retry() {
     if (lesson.practice) { // a new practice round, with new questions
+      clearConfetti();
       startPractice();
       renderPractice(false);
       return playStepStart();
     }
-    // Do the exercises again (without learning and tracing again).
-    lesson.step = lesson.steps.indexOf('find') - 1;
+    // Do the whole level again, from the first task.
+    lesson.step = -1;
     lesson.right = 0;
     lesson.total = 0;
     lesson.log = [];
