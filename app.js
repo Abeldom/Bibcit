@@ -585,6 +585,9 @@ window.addEventListener('popstate', () => {
 // side by side like a turned page (from the right when going deeper, from the left going back).
 const pageDepth = path => (path === '/' ? 0 : /^\/(letter|level)\/|^\/(prezentare|inregistrare)$/.test(path) ? 2 : 1);
 let shownPath = null;
+// where the page was scrolled to before it changed (the old copy keeps that position)
+let pageScroll = 0;
+window.addEventListener('scroll', () => { pageScroll = window.scrollY; }, { passive: true });
 function pageTurn(dir) {
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const back = dir === 'back';
@@ -594,19 +597,30 @@ function pageTurn(dir) {
   old.className = 'page-old' + (back ? ' back' : '');
   const copy = $app.cloneNode(true);
   copy.classList.remove('turn-next', 'turn-back');
+  copy.style.marginTop = -pageScroll + 'px';
+  // drawings are not copied with the page: copy them over by hand
+  const from = $app.querySelectorAll('canvas'), to = copy.querySelectorAll('canvas');
+  to.forEach((c, k) => { try { c.getContext('2d').drawImage(from[k], 0, 0); } catch (e) {} });
   old.appendChild(copy);
   old.addEventListener('animationend', () => old.remove());
   setTimeout(() => old.remove(), 600); // also when the animation never runs (e.g. a hidden tab)
   document.body.appendChild(old);
+  pageScroll = 0;
   $app.classList.remove('turn-next', 'turn-back');
   void $app.offsetWidth; // restart the animation
   $app.classList.add(back ? 'turn-back' : 'turn-next');
 }
 $app.addEventListener('animationend', e => {
-  if (e.target !== $app) return;
-  $app.classList.remove('turn-next', 'turn-back');
-  placeBubbleTip(); // measured again now the page stands still
+  if (e.target === $app) $app.classList.remove('turn-next', 'turn-back');
 });
+
+// Position of an element in the page's layout, ignoring animations (getBoundingClientRect
+// would give a moving, tilted position while the page turns).
+function layoutLeft(el) {
+  let x = 0;
+  for (; el; el = el.offsetParent) x += el.offsetLeft;
+  return x;
+}
 
 function render(entering = false) {
   const path = currentPath();
@@ -849,6 +863,18 @@ function scoreTask(right) {
   lesson.total++;
   if (right) lesson.right++;
   lesson.log.push(!!right);
+  (lesson.logSteps = lesson.logSteps || []).push(lesson.step); // which task it belongs to
+}
+
+// Test mode (◀ ▶): forget the results of the task being entered and of all after it,
+// so redoing a task does not count it twice.
+function forgetFromStep(k) {
+  const steps = lesson.logSteps || [];
+  const keep = steps.map((s, n) => s < k ? n : -1).filter(n => n >= 0);
+  lesson.log = keep.map(n => lesson.log[n]);
+  lesson.logSteps = keep.map(n => steps[n]);
+  lesson.total = lesson.log.length;
+  lesson.right = lesson.log.filter(Boolean).length;
 }
 
 // The result without numbers: one dot per task in order, green = right, orange = not right.
@@ -878,6 +904,7 @@ function jumpToStep(k) {
   stopPairDemo();
   if (trace) stopDemo();
   const back = k < lesson.step;
+  forgetFromStep(k);
   lesson.step = k - 1;
   nextStep(back ? 'back' : 'next'); // sets the exercise up and starts its sound (◀ turns the page back)
 }
@@ -1702,9 +1729,8 @@ function placeBubbleTip() {
   const bubble = $app.querySelector('.q-bubble');
   if (!now || !bubble) return;
   bubble.style.transform = '';
-  const a = now.getBoundingClientRect();
-  const b = bubble.getBoundingClientRect();
-  const page = bubble.parentElement.getBoundingClientRect();
+  const box = el => { const left = layoutLeft(el); return { left, right: left + el.offsetWidth, width: el.offsetWidth, height: el.offsetHeight }; };
+  const a = box(now), b = box(bubble), page = box(bubble.parentElement);
   const center = a.left + a.width / 2;
   // a short box (2 dots) slides sideways until the current step is above it, staying on screen
   // the pointer stays on the straight part of the outline, clear of the rounded ends
@@ -2651,6 +2677,7 @@ const actions = {
     lesson.right = 0;
     lesson.total = 0;
     lesson.log = [];
+    lesson.logSteps = [];
     nextStep();
   },
   nextLevel() {

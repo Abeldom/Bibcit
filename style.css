@@ -371,7 +371,8 @@ mark { background: none; color: var(--mark); }
 .letter-box.locked { background: transparent; box-shadow: none; border: 3px dashed var(--line); color: var(--muted); }
 .letter-box:active:not(.locked) { transform: scale(.97); }
 /* the sublevels: three equal slots stacked next to the box (⭐ on top) */
-.sub-col { display: grid; grid-template-rows: repeat(3, 1fr); gap: 8px; animation: sub-in .25s ease-out; }
+/* each sublevel a third of the letter box high; fewer than 3 are centred beside the box */
+.sub-col { display: grid; grid-auto-rows: calc((100% - 16px) / 3); align-content: center; gap: 8px; animation: sub-in .25s ease-out; }
 @keyframes sub-in { from { opacity: 0; transform: translateX(-10px); } }
 .sub-level {
   position: relative;
@@ -952,6 +953,8 @@ body { overflow-x: hidden; }
   background: var(--bg); transform-origin: right center;
   animation: page-out .34s cubic-bezier(.3,.6,.3,1) forwards; }
 .page-old.back { transform-origin: left center; animation-name: page-out-back; }
+.page-old, #app.turn-next, #app.turn-back { will-change: transform; backface-visibility: hidden; }
+.page-old .flying, .page-old .confetti { display: none; }   /* moving bits are not copied along */
 #app.turn-next { transform-origin: left center; animation: turn-next .34s cubic-bezier(.3,.6,.3,1); }
 #app.turn-back { transform-origin: right center; animation: turn-back .34s cubic-bezier(.3,.6,.3,1); }
 /* each page is hinged on the edge where the two meet, so they stay joined while turning */

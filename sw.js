@@ -2,7 +2,7 @@
 // App files are fetched from the network first (so your published changes show up)
 // and taken from the cache when the phone is offline.
 
-const CACHE = 'bibcit-v7';
+const CACHE = 'bibcit-v8';
 const APP_FILES = [
   './',
   'index.html',
