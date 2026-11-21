@@ -554,7 +554,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 

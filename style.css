@@ -948,7 +948,12 @@ mark { background: none; color: var(--mark); }
 @keyframes pulse { 50% { opacity: .65; } }
 
 /* page turn (played from app.js): the old page slides out while the new one slides in beside it */
-body { overflow-x: hidden; }
+/* The new page waits just past the right edge before sliding in. The page must never grow wider
+   because of it: on phones (Chrome, Messenger) a wider page is re-fitted to the screen, which
+   made everything jump right and flicker when entering a page. 'clip' on both html and body is
+   what phone browsers respect ('hidden' on body alone is ignored there). */
+html, body { overflow-x: hidden; }
+@supports (overflow-x: clip) { html, body { overflow-x: clip; } }
 .page-old { position: fixed; inset: 0; z-index: 59; pointer-events: none; overflow: hidden;
   background: var(--bg); will-change: transform; }
 .page-old .flying, .page-old .confetti { display: none; }   /* moving bits are not copied along */
