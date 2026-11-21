@@ -2,7 +2,7 @@
 // App files are fetched from the network first (so your published changes show up)
 // and taken from the cache when the phone is offline.
 
-const CACHE = 'bibcit-v11';
+const CACHE = 'bibcit-v12';
 const APP_FILES = [
   './',
   'index.html',
@@ -47,7 +47,9 @@ self.addEventListener('fetch', event => {
   if (url.origin === self.location.origin && url.pathname.includes('/api/')) return; // laptop server only
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(request)
+      // 'no-cache': always ask GitHub whether the file changed (otherwise the phone may keep
+      // using a downloaded copy for up to 10 minutes after you publish)
+      fetch(request, { cache: 'no-cache' })
         .then(response => saveCopy(request, response))
         .catch(() =>
           caches.match(request, { ignoreSearch: true })

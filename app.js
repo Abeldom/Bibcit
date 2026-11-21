@@ -552,6 +552,9 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
            #/exercitiu     practice: 12 mixed questions on everything learned so far
    The back button on a page goes to its parent page; the phone's own back
    button behaves the same way. */
+// Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
+// so you can see on the phone which version is running.
+const APP_VERSION = 12;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -615,9 +618,13 @@ function pageTurn(dir) {
   // first; otherwise the slide stalls with an empty page and then jumps to the end.
   old.classList.add('turn-hold');
   $app.classList.add(back ? 'turn-back' : 'turn-next', 'turn-hold');
+  // (two frames and at least 60 ms; frames are not drawn when the app is in the background:
+  // then it starts after 150 ms anyway)
+  let framesDone = false, timeDone = false;
   const go = () => { old.classList.remove('turn-hold'); $app.classList.remove('turn-hold'); };
-  requestAnimationFrame(() => requestAnimationFrame(go));
-  setTimeout(go, 120); // frames are not drawn when the app is in the background: start anyway
+  requestAnimationFrame(() => requestAnimationFrame(() => { framesDone = true; if (timeDone) go(); }));
+  setTimeout(() => { timeDone = true; if (framesDone) go(); }, 60);
+  setTimeout(go, 150);
 }
 $app.addEventListener('animationend', e => {
   if (e.target === $app) $app.classList.remove('turn-next', 'turn-back', 'turn-hold');
@@ -2359,7 +2366,7 @@ function renderSettings() {
         <p>${voiceText}</p>
         ${hasSpeech ? `<button class="text-btn" data-action="testVoice">${icon('volume')}${T.test}</button>` : ''}
       </section>
-      <p class="version">Bibcit 0.3</p>
+      <p class="version">Bibcit 0.3 · v${APP_VERSION}</p>
     </div>`;
 }
 
