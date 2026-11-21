@@ -947,23 +947,12 @@ mark { background: none; color: var(--mark); }
 }
 @keyframes pulse { 50% { opacity: .65; } }
 
-/* page turn: the old page slides out while the new one slides in beside it (no gap, no fade).
-   A plain sideways slide: a 3D tilt made some Android phones jump and stall. */
+/* page turn (played from app.js): the old page slides out while the new one slides in beside it */
 body { overflow-x: hidden; }
 .page-old { position: fixed; inset: 0; z-index: 59; pointer-events: none; overflow: hidden;
-  background: var(--bg);
-  animation: page-out .3s cubic-bezier(.3,.6,.3,1) forwards; }
-.page-old.back { animation-name: page-out-back; }
-#app.turn-next { animation: turn-next .3s cubic-bezier(.3,.6,.3,1); }
-#app.turn-back { animation: turn-back .3s cubic-bezier(.3,.6,.3,1); }
-.page-old, #app.turn-next, #app.turn-back { will-change: transform; backface-visibility: hidden; }
+  background: var(--bg); will-change: transform; }
 .page-old .flying, .page-old .confetti { display: none; }   /* moving bits are not copied along */
 .page-old * { animation: none !important; }   /* the old page is a still picture: nothing to redraw */
-.page-old.turn-hold, #app.turn-hold { animation-play-state: paused; }
-@keyframes page-out      { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(-100vw, 0, 0); } }
-@keyframes page-out-back { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(100vw, 0, 0); } }
-@keyframes turn-next     { from { transform: translate3d(100vw, 0, 0); }  to   { transform: translate3d(0, 0, 0); } }
-@keyframes turn-back     { from { transform: translate3d(-100vw, 0, 0); } to   { transform: translate3d(0, 0, 0); } }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

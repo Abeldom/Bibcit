@@ -554,7 +554,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 12;
+const APP_VERSION = 14;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -591,44 +591,42 @@ let shownPath = null;
 // where the page was scrolled to before it changed (the old copy keeps that position)
 let pageScroll = 0;
 window.addEventListener('scroll', () => { pageScroll = window.scrollY; }, { passive: true });
+let turnAnims = [];
 function pageTurn(dir) {
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!$app.animate) return; // very old browser: pages just change
   const back = dir === 'back';
+  turnAnims.forEach(a => a.cancel());
   document.querySelectorAll('.page-old').forEach(el => el.remove());
   // a still copy of the old page slides out while the new page is drawn in $app
   const old = document.createElement('div');
-  old.className = 'page-old' + (back ? ' back' : '');
+  old.className = 'page-old';
   const copy = $app.cloneNode(true);
-  copy.classList.remove('turn-next', 'turn-back');
   copy.style.marginTop = -pageScroll + 'px';
   // drawings are not copied with the page: copy them over by hand
   const from = $app.querySelectorAll('canvas'), to = copy.querySelectorAll('canvas');
   to.forEach((c, k) => { try { c.getContext('2d').drawImage(from[k], 0, 0); } catch (e) {} });
   old.appendChild(copy);
-  old.addEventListener('animationend', e => { if (e.target === old) old.remove(); });
-  setTimeout(() => { // also when the animation never runs (e.g. a hidden tab): end it anyway
-    old.remove();
-    if (!document.querySelector('.page-old')) $app.classList.remove('turn-next', 'turn-back', 'turn-hold');
-  }, 1000);
   document.body.appendChild(old);
   pageScroll = 0;
-  $app.classList.remove('turn-next', 'turn-back');
-  void $app.offsetWidth; // restart the animation
-  // Both pages wait still at their start for two frames, so a slower phone can draw the new page
-  // first; otherwise the slide stalls with an empty page and then jumps to the end.
-  old.classList.add('turn-hold');
-  $app.classList.add(back ? 'turn-back' : 'turn-next', 'turn-hold');
-  // (two frames and at least 60 ms; frames are not drawn when the app is in the background:
-  // then it starts after 150 ms anyway)
-  let framesDone = false, timeDone = false;
-  const go = () => { old.classList.remove('turn-hold'); $app.classList.remove('turn-hold'); };
-  requestAnimationFrame(() => requestAnimationFrame(() => { framesDone = true; if (timeDone) go(); }));
-  setTimeout(() => { timeDone = true; if (framesDone) go(); }, 60);
-  setTimeout(go, 150);
+  // Going deeper the new page comes in from the right (its left side first) and the old one leaves
+  // to the left; going back the opposite. Both start together after a short wait (60 ms), so a
+  // slower phone can draw the new page first. Played from here, not from style.css: on some phones
+  // the new page's CSS animation did not run and it was only uncovered instead of sliding in.
+  const side = back ? -1 : 1;
+  const timing = { duration: 300, delay: 60, easing: 'cubic-bezier(.3,.6,.3,1)' };
+  const outAnim = old.animate([{ transform: 'translate3d(0,0,0)' }, { transform: `translate3d(${-side * 100}vw,0,0)` }],
+    { ...timing, fill: 'both' });
+  const inAnim = $app.animate([{ transform: `translate3d(${side * 100}vw,0,0)` }, { transform: 'translate3d(0,0,0)' }],
+    { ...timing, fill: 'backwards' });
+  turnAnims = [outAnim, inAnim];
+  const end = () => { old.remove(); };
+  outAnim.finished.then(end, end);
+  setTimeout(() => { // also when animations never run (e.g. a hidden tab): end it anyway
+    old.remove();
+    if (inAnim.playState !== 'finished') inAnim.cancel();
+  }, 1000);
 }
-$app.addEventListener('animationend', e => {
-  if (e.target === $app) $app.classList.remove('turn-next', 'turn-back', 'turn-hold');
-});
 
 // Position of an element in the page's layout, ignoring animations (getBoundingClientRect
 // would give a moving, tilted position while the page turns).
