@@ -5,7 +5,7 @@
   "lang": "ro",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F7F4EE",
   "theme_color": "#F7F4EE",
