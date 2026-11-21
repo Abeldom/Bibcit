@@ -947,21 +947,21 @@ mark { background: none; color: var(--mark); }
 }
 @keyframes pulse { 50% { opacity: .65; } }
 
-/* page turn: the old page slides out while the new one slides in beside it (no gap, no fade) */
+/* page turn: the old page slides out while the new one slides in beside it (no gap, no fade).
+   A plain sideways slide: a 3D tilt made some Android phones jump and stall. */
 body { overflow-x: hidden; }
 .page-old { position: fixed; inset: 0; z-index: 59; pointer-events: none; overflow: hidden;
-  background: var(--bg); transform-origin: right center;
-  animation: page-out .34s cubic-bezier(.3,.6,.3,1) forwards; }
-.page-old.back { transform-origin: left center; animation-name: page-out-back; }
+  background: var(--bg);
+  animation: page-out .3s cubic-bezier(.3,.6,.3,1) forwards; }
+.page-old.back { animation-name: page-out-back; }
+#app.turn-next { animation: turn-next .3s cubic-bezier(.3,.6,.3,1); }
+#app.turn-back { animation: turn-back .3s cubic-bezier(.3,.6,.3,1); }
 .page-old, #app.turn-next, #app.turn-back { will-change: transform; backface-visibility: hidden; }
 .page-old .flying, .page-old .confetti { display: none; }   /* moving bits are not copied along */
-#app.turn-next { transform-origin: left center; animation: turn-next .34s cubic-bezier(.3,.6,.3,1); }
-#app.turn-back { transform-origin: right center; animation: turn-back .34s cubic-bezier(.3,.6,.3,1); }
-/* each page is hinged on the edge where the two meet, so they stay joined while turning */
-@keyframes page-out      { to   { transform: perspective(1200px) translateX(-100vw) rotateY(-14deg); } }
-@keyframes page-out-back { to   { transform: perspective(1200px) translateX(100vw) rotateY(14deg); } }
-@keyframes turn-next     { from { transform: perspective(1200px) translateX(100vw) rotateY(14deg); } }
-@keyframes turn-back     { from { transform: perspective(1200px) translateX(-100vw) rotateY(-14deg); } }
+@keyframes page-out      { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(-100vw, 0, 0); } }
+@keyframes page-out-back { from { transform: translate3d(0, 0, 0); }      to   { transform: translate3d(100vw, 0, 0); } }
+@keyframes turn-next     { from { transform: translate3d(100vw, 0, 0); }  to   { transform: translate3d(0, 0, 0); } }
+@keyframes turn-back     { from { transform: translate3d(-100vw, 0, 0); } to   { transform: translate3d(0, 0, 0); } }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
