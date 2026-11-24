@@ -662,7 +662,7 @@ function notPassedSounds(face) {
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 122;
+const APP_VERSION = 123;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -867,11 +867,18 @@ function tryMusicAtOpening() {
   else ctx.resume().then(go).catch(() => {});
 }
 setTimeout(tryMusicAtOpening, 0);
-document.addEventListener('pointerdown', () => {
-  if (musicGain && !music.paused) return; // already playing
-  if (!setUpMusic()) return;
+// The first tap allows sound. On a touch screen the browser counts the finger lifting (not touching
+// down) as that permission, so these events are used; the music is started right inside the tap.
+function unlockMusic() {
+  const ctx = getCtx(); // (wakes the sound up)
+  if (!ctx || !setUpMusic()) return;
+  if (musicWanted() && music.paused) music.play().catch(() => {});
   setTimeout(updateMusic, 100); // (after the tap has opened its page)
-}, { capture: true });
+  if (ctx.state === 'running' && !music.paused) {
+    ['pointerup', 'touchend', 'click', 'keydown'].forEach(t => document.removeEventListener(t, unlockMusic, true));
+  }
+}
+['pointerup', 'touchend', 'click', 'keydown'].forEach(t => document.addEventListener(t, unlockMusic, true));
 document.addEventListener('visibilitychange', updateMusic);
 
 /* ---------- Small pieces of markup ---------- */

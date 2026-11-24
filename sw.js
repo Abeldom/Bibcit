@@ -2,7 +2,7 @@
 // App files are fetched from the network first (so your published changes show up)
 // and taken from the cache when the phone is offline.
 
-const CACHE = 'bibcit-v122';
+const CACHE = 'bibcit-v123';
 const APP_FILES = [
   './',
   'index.html',
@@ -42,21 +42,34 @@ function saveCopy(request, response) {
 // The background music: downloaded whole once and kept on the phone (also offline). It has its own
 // cache, so a new app version does not download it again; give MUSIC_CACHE a new name when the music
 // file changes. The browser asks for a long sound in parts (a "range"): each part is cut out of the copy.
+// Before the copy is saved, the music plays straight from the internet (no waiting for 5.5 MB),
+// while the whole file is saved in the background (only one download at a time).
 const MUSIC_CACHE = 'bibcit-music-1';
-async function musicResponse(request) {
+let savingMusic = null;
+function saveMusic(url) {
+  if (!savingMusic) {
+    savingMusic = caches.open(MUSIC_CACHE)
+      .then(cache => fetch(url).then(res => (res.status === 200 ? cache.put(url, res) : null)))
+      .catch(() => {})
+      .finally(() => { savingMusic = null; });
+  }
+  return savingMusic;
+}
+async function musicResponse(event) {
+  const request = event.request;
   const cache = await caches.open(MUSIC_CACHE);
   let whole = await cache.match(request.url);
-  if (!whole) {
-    try {
-      const res = await fetch(request.url);
-      if (res.status !== 200) return res;
-      await cache.put(request.url, res.clone());
-      whole = res;
-    } catch {
-      return new Response('', { status: 504 });
-    }
-  }
   const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') || '');
+  if (!whole) {
+    if (range) {
+      // playing: from the internet now, saved meanwhile
+      event.waitUntil(saveMusic(request.url));
+      return fetch(request).catch(() => new Response('', { status: 504 }));
+    }
+    // the app's background download: save the copy
+    await saveMusic(request.url);
+    return (await cache.match(request.url)) || new Response('', { status: 504 });
+  }
   if (!range) return whole;
   const data = await whole.arrayBuffer();
   const size = data.byteLength;
@@ -81,7 +94,7 @@ self.addEventListener('fetch', event => {
 
   if (url.origin === self.location.origin && url.pathname.includes('/api/')) return; // laptop server only
   if (url.origin === self.location.origin && url.pathname.includes('/music/')) {
-    event.respondWith(musicResponse(request));
+    event.respondWith(musicResponse(event));
     return;
   }
   if (url.origin === self.location.origin) {
