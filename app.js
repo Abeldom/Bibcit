@@ -40,6 +40,8 @@ const T = {
   levelsHelp: (done, total) => `${done} din ${total} niveluri trecute. Fiecare literă are până la 3 niveluri: ⭐ introducere, ⭐⭐ exerciții, ⭐⭐⭐ (în plus). Un nivel ⭐ este trecut cu 80% răspunsuri corecte din prima încercare, ⭐⭐ cu 85%, ⭐⭐⭐ cu 90%. Litera următoare se deschide după ⭐⭐.`,
   unlockAll: 'Deschide toate nivelurile',
   testMode: 'Mod de testare: butoane ◀ ▶ pentru a sări între exerciții',
+  music: 'Muzică',
+  musicSwitch: 'Muzică de fundal (nu se aude în exerciții)',
   resetProgress: 'Șterge progresul',
   resetConfirm: 'Ștergi tot progresul? Se începe din nou de la nivelul 1.',
   voice: 'Vocea telefonului',
@@ -136,7 +138,7 @@ const store = {
   },
 };
 
-const settings = Object.assign({ unlockAll: false, testMode: false, theme: 'auto' }, store.get('bibcit.settings', {}));
+const settings = Object.assign({ unlockAll: false, testMode: false, theme: 'auto', music: true }, store.get('bibcit.settings', {}));
 
 // Light / dark mode: 'light', 'dark', or 'auto' (follow the phone).
 function applyTheme() {
@@ -322,6 +324,8 @@ async function loadAudioIndex() {
       setTimeout(() => [...new Set([...Object.values(WORD_PICTURES), ...Object.values(WORD_BANK)])].filter(p => /\.(svg|png|jpe?g|webp)$/i.test(p)).forEach(p => fetch(p).catch(() => {})), 3500);
     }
   } catch { /* no recordings yet */ }
+  // the background music too (5.5 MB): the service worker keeps one copy, fetched only once
+  setTimeout(() => fetch('music/background.m4a').catch(() => {}), 4000);
 }
 const audioUrl = key => `audio/${key}.wav`;
 
@@ -658,7 +662,7 @@ function notPassedSounds(face) {
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 119;
+const APP_VERSION = 122;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -813,7 +817,62 @@ function render(entering = false) {
   else if (path === '/prezentare') renderOverview();
   else if (path === '/exercitiu') renderPractice(entering);
   else renderHome();
+  updateMusic();
 }
+
+/* ---------- Background music ----------
+   Plays quietly on the menu pages (main page, Alfabetul, Niveluri, Setări…) and fades out during the
+   tasks of a level and Exersează (with their result screens), where the sounds must be heard, and on
+   the recording page. It can be switched off in Setări. It starts as the app opens where the phone
+   allows that, otherwise with the first tap.
+   It goes through Web Audio, so its volume can be set on iPhones too. */
+const MUSIC_VOLUME = 0.22;
+const MUSIC_FADE = 0.25; // s (how quickly it fades in or out)
+const music = new Audio('music/background.m4a');
+music.loop = true;
+music.preload = 'none';
+let musicGain = null;
+let musicStopTimer = 0;
+const musicWanted = () => settings.music && document.visibilityState === 'visible'
+  && !/^\/(level\/\d+|exercitiu|inregistrare)$/.test(currentPath());
+function updateMusic() {
+  if (!musicGain) return; // the phone has not allowed sound yet
+  const ctx = getCtx();
+  const want = musicWanted();
+  clearTimeout(musicStopTimer);
+  musicGain.gain.cancelScheduledValues(ctx.currentTime);
+  musicGain.gain.setTargetAtTime(want ? MUSIC_VOLUME : 0, ctx.currentTime, MUSIC_FADE);
+  if (want) { if (music.paused) music.play().catch(() => {}); }
+  else musicStopTimer = setTimeout(() => music.pause(), MUSIC_FADE * 5000);
+}
+function setUpMusic() {
+  if (musicGain) return true;
+  const ctx = getCtx();
+  if (!ctx) return false;
+  try {
+    musicGain = ctx.createGain();
+    musicGain.gain.value = 0;
+    ctx.createMediaElementSource(music).connect(musicGain).connect(ctx.destination);
+  } catch { musicGain = null; return false; }
+  return true;
+}
+// Right when the app opens: phones allow sound without a tap only sometimes (Chrome on Android:
+// when the app was added to the home screen, or the site is used often). Otherwise it starts
+// with the first tap.
+function tryMusicAtOpening() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const go = () => { if (ctx.state === 'running' && setUpMusic()) updateMusic(); };
+  if (ctx.state === 'running') go();
+  else ctx.resume().then(go).catch(() => {});
+}
+setTimeout(tryMusicAtOpening, 0);
+document.addEventListener('pointerdown', () => {
+  if (musicGain && !music.paused) return; // already playing
+  if (!setUpMusic()) return;
+  setTimeout(updateMusic, 100); // (after the tap has opened its page)
+}, { capture: true });
+document.addEventListener('visibilitychange', updateMusic);
 
 /* ---------- Small pieces of markup ---------- */
 function topBar({ left = '', title = '', center = '', right = '' } = {}) {
@@ -3129,6 +3188,10 @@ function renderSettings() {
         </div>
       </section>
       <section>
+        <h2>${T.music}</h2>
+        <div class="switch-row"><span>${T.musicSwitch}</span><button class="switch${settings.music ? ' on' : ''}" data-action="toggleMusic" role="switch" aria-checked="${settings.music}" aria-label="${T.musicSwitch}"></button></div>
+      </section>
+      <section>
         <h2>${T.recordings}</h2>
         <p>${T.recordingsHelp(recorded, keys.size)}</p>
         <button class="text-btn" data-action="go" data-value="/inregistrare">${icon('mic')}${T.openRecorder}</button>
@@ -3494,6 +3557,12 @@ const actions = {
   },
 
   // settings
+  toggleMusic() {
+    settings.music = !settings.music;
+    saveSettings();
+    renderSettings();
+    updateMusic();
+  },
   toggleTest() {
     settings.testMode = !settings.testMode;
     saveSettings();
