@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- A cloud ("nor") in a blue sky. Drawn for Bibcit. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3F8EF0"/>
+      <stop offset="1" stop-color="#9FD0FF"/>
+    </linearGradient>
+    <linearGradient id="puff" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset=".7" stop-color="#F4F7FB"/>
+      <stop offset="1" stop-color="#D5DEEA"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="188" height="188" rx="26" fill="url(#sky)"/>
+  <!-- a small cloud far away -->
+  <g fill="#FFFFFF" opacity=".75">
+    <circle cx="150" cy="48" r="13"/><circle cx="166" cy="52" r="10"/><circle cx="136" cy="54" r="9"/>
+    <rect x="134" y="50" width="34" height="13" rx="6.5"/>
+  </g>
+  <!-- the big fluffy cloud: soft shadow, then the puffs -->
+  <g fill="#2F6FC0" opacity=".25" transform="translate(4 8)">
+    <circle cx="62" cy="118" r="28"/><circle cx="96" cy="96" r="38"/><circle cx="134" cy="110" r="30"/><circle cx="158" cy="128" r="20"/>
+    <rect x="34" y="118" width="144" height="36" rx="18"/>
+  </g>
+  <g fill="url(#puff)">
+    <circle cx="62" cy="118" r="28"/><circle cx="96" cy="96" r="38"/><circle cx="134" cy="110" r="30"/><circle cx="158" cy="128" r="20"/>
+    <rect x="34" y="118" width="144" height="36" rx="18"/>
+  </g>
+  <!-- light on top of the puffs -->
+  <g fill="#FFFFFF" opacity=".9">
+    <ellipse cx="88" cy="78" rx="14" ry="8"/><ellipse cx="128" cy="96" rx="9" ry="5"/>
+  </g>
+</svg>

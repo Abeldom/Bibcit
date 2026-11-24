@@ -49,6 +49,7 @@ const T = {
   voiceTest: 'Bună ziua! Ma, mi, mu.',
   test: 'Test',
   recordings: 'Înregistrări',
+  missingTitle: n => `De înregistrat (${n})`,
   recordingsHelp: (n, total) => `${n} din ${total} sunete sunt înregistrate. Înregistrezi pe laptop, cu vocea ta.`,
   openRecorder: 'Deschide pagina de înregistrare',
   recorderNoServer: 'Înregistrarea merge doar pe laptop, când aplicația este pornită cu server.py. În folderul proiectului rulează: python server.py — apoi deschide http://localhost:8000/#/inregistrare',
@@ -75,6 +76,8 @@ const T = {
   ovFind: 'Găsește litera după sunet',
   ovAllNew: l => `toate cu ${l} · 2, 2, 3, 3, 4, 4 variante`,
   ovSomeNew: (n, l) => `${n} cu ${l}, restul litere învățate · 2, 2, 3, 3, 4, 4 variante`,
+  ovInitial: 'Cu ce literă începe cuvântul?',
+  ovInitialNote: (n, l, choices) => `imagine și cuvânt auzit · ${n} cu ${l} · ${choices} variante`,
   ovPair: 'Perechi: literă mare – mică',
   ovAnyLetters: 'orice litere învățate',
   ovLearnPage: n => `pagină de învățare (${n} ${n === 1 ? 'nouă' : 'noi'}), nu se punctează`,
@@ -102,6 +105,8 @@ const ICONS = {
   settings: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   steps: '<polyline points="3 20 8 20 8 15 13 15 13 10 18 10 18 5 21 5"/>',
+  // Alfabetul: "Aa" (the printed, double-story a)
+  letters: '<polyline points="1.5 20 6.5 4 11.5 20"/><line x1="3.4" y1="14.3" x2="9.6" y2="14.3"/><path d="M14 10.6C15.6 8.9 19.8 9 20.6 11.6V20"/><path d="M20.6 15.2C18.2 13.8 14.2 14.1 14.2 17.3C14.2 20.5 18.7 20.7 20.6 17.9"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
   cross: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
@@ -109,6 +114,8 @@ const ICONS = {
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   play: '<polygon points="6 4 20 12 6 20 6 4"/>',
   refresh: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
+  forward: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  house: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11h14V9"/><path d="M10 20v-6h4v6"/>',
 };
 const FILLED = new Set(['stop', 'play']);
 
@@ -311,7 +318,8 @@ async function loadAudioIndex() {
     // Fetch every recording once, so they also work offline later.
     setTimeout(() => keys.forEach(k => fetch(audioUrl(k)).catch(() => {})), 3000);
     if (typeof WORD_PICTURES === 'object') {
-      setTimeout(() => Object.values(WORD_PICTURES).filter(p => /\.(svg|png|jpe?g|webp)$/i.test(p)).forEach(p => fetch(p).catch(() => {})), 3500);
+      // (WORD_BANK: also the pictures of "Cu ce literă începe?", e.g. dovleac, nor)
+      setTimeout(() => [...new Set([...Object.values(WORD_PICTURES), ...Object.values(WORD_BANK)])].filter(p => /\.(svg|png|jpe?g|webp)$/i.test(p)).forEach(p => fetch(p).catch(() => {})), 3500);
     }
   } catch { /* no recordings yet */ }
 }
@@ -487,9 +495,11 @@ const VOICE = {
   again: { key: 'V_again', text: 'Mai încearcă o dată.' },
   match: { key: 'V_match', text: 'Formează perechi din imagini și cuvinte.' },
   find: { key: 'V_find', text: 'Ascultă și apasă pe litera pe care o auzi.' },
+  initial: { key: 'V_initial', text: 'Ascultă cuvântul. Cu ce literă începe?' },
   // short versions for ⭐⭐ and ⭐⭐⭐ levels (the learner knows the tasks by then)
   traceShort: { key: 'V_trace3', text: 'Scrie litera.' },
   findShort: { key: 'V_find3', text: 'Găsește litera.' },
+  initialShort: { key: 'V_initial3', text: 'Cu ce literă începe?' },
   pairShort: { key: 'V_pair3', text: 'Formează perechi.' },
   practice: { key: 'V_practice', text: 'Exersează.' },  // said when Exersează starts
 };
@@ -543,6 +553,100 @@ const soundRight = () => tones([660, 880], 'sine', 0.15, 0.2);
 const soundWrong = () => tones([196], 'triangle', 0.25, 0.15);
 const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
 
+/* The celebration's sounds (passed result screen), made by the phone, timed with what is seen:
+   a soft "pip" per result dot, the poppers' bang, a rising whoosh while the stars fly down,
+   the chime when they land, then "Bravo!"; a little twinkle each time the stars shine again. */
+// one result dot: green dots step up in pitch, an orange one is lower and softer
+const soundDot = (k, ok) => tones([ok ? 620 + k * 45 : 330], 'sine', 0.09, ok ? 0.09 : 0.06);
+// the bang: a short burst of noise with a low thump (the later bangs are quieter)
+function soundPop(vol = 0.3) {
+  try {
+    const ctx = getCtx();
+    if (!ctx) return;
+    const t = ctx.currentTime, len = 0.4;
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * len), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 5);
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 1600;
+    band.Q.value = 0.6;
+    const ng = ctx.createGain();
+    ng.gain.value = vol;
+    noise.connect(band).connect(ng).connect(ctx.destination);
+    noise.start(t);
+    const osc = ctx.createOscillator(), og = ctx.createGain();
+    osc.frequency.setValueAtTime(170, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.16);
+    og.gain.setValueAtTime(vol * 1.3, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    osc.connect(og).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  } catch { /* no Web Audio */ }
+}
+// the stars flying down: a soft sound sliding up
+function soundRise(dur) {
+  try {
+    const ctx = getCtx();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(420, t);
+    osc.frequency.exponentialRampToValueAtTime(1400, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.06); // heard at once (it used to fade in slowly)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  } catch { /* no Web Audio */ }
+}
+// the stars shine again: a quiet twinkle
+const soundTwinkle = () => tones([1568, 2093, 2637], 'sine', 0.07, 0.05);
+
+/* Not passed: gentle, friendly sounds (never a "wrong" sound), timed with the picture,
+   then "Mai încearcă o dată." (the learner's own recording). Played once, not on each repeat. */
+// a soft sound sliding up (the plant's stem growing)
+function soundGrow(dur) {
+  try {
+    const ctx = getCtx();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(260, t);
+    osc.frequency.exponentialRampToValueAtTime(700, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08, t + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.05);
+  } catch { /* no Web Audio */ }
+}
+function notPassedSounds(face) {
+  const here = () => face.isConnected;
+  const later = (fn, ms) => soundLater(() => { if (here()) fn(); }, ms);
+  if (face.classList.contains('thumb')) {
+    // (the thumbs up lasts 3 s) the hand pops up, the thumb wiggles with its rays: a warm "ta-da"
+    later(() => tones([392], 'sine', 0.12, 0.12), 60);
+    later(() => tones([523, 659], 'triangle', 0.18, 0.12), 1400);
+    later(() => playVoice('again'), 2300);
+  } else {
+    // (the plant lasts 5 s) the pot lands, the stem grows, two leaves open, a sparkle
+    later(() => tones([196], 'sine', 0.14, 0.14), 80);
+    later(() => soundGrow(1.0), 800);
+    later(() => tones([784], 'sine', 0.08, 0.08), 2100);
+    later(() => tones([880], 'sine', 0.08, 0.08), 2450);
+    later(soundTwinkle, 3150);
+    later(() => playVoice('again'), 3700);
+  }
+}
+
 /* ---------- Navigation ----------
    Pages:  #/              home (the two parts)
            #/letters       alphabet overview      #/letter/3   one letter
@@ -554,7 +658,7 @@ const soundPassed = () => tones([523, 659, 784, 1047], 'sine', 0.16, 0.2);
    button behaves the same way. */
 // Version shown at the bottom of Setări: raise it together with CACHE in sw.js on each publish,
 // so you can see on the phone which version is running.
-const APP_VERSION = 25;
+const APP_VERSION = 119;
 const $app = document.getElementById('app');
 const currentPath = () => location.hash.slice(1) || '/';
 
@@ -592,7 +696,12 @@ let shownPath = null;
 let pageScroll = 0;
 window.addEventListener('scroll', () => { pageScroll = window.scrollY; }, { passive: true });
 let turnAnims = [];
-function pageTurn(dir) {
+// The top of a task page (top bar and the row of task icons) stays the same from task to task.
+const taskTop = root => root.querySelector(':scope > .step-jump, :scope > .step-icons');
+// keepTop: from one task to the next only the part under the task icons turns; the top stays still.
+// keepTop 'bar': only the top bar stays (from the last task to the result screen, which has no task icons).
+function pageTurn(dir, keepTop = false) {
+  const topOf = root => (keepTop === 'bar' ? root.querySelector(':scope > .topbar') : taskTop(root));
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   if (!$app.animate) return; // very old browser: pages just change
   const back = dir === 'back';
@@ -601,6 +710,9 @@ function pageTurn(dir) {
   // a still copy of the old page slides out while the new page is drawn in $app
   const old = document.createElement('div');
   old.className = 'page-old';
+  const top = keepTop && topOf($app);
+  const cut = top ? layoutTop(top) + top.offsetHeight - pageScroll : 0; // where the moving part starts
+  if (top) old.style.clipPath = `inset(${cut}px 0 0 0)`;
   const copy = $app.cloneNode(true);
   copy.style.marginTop = -pageScroll + 'px';
   // drawings are not copied with the page: copy them over by hand
@@ -617,15 +729,44 @@ function pageTurn(dir) {
   const timing = { duration: 300, delay: 60, easing: 'cubic-bezier(.3,.6,.3,1)' };
   const outAnim = old.animate([{ transform: 'translate3d(0,0,0)' }, { transform: `translate3d(${-side * 100}vw,0,0)` }],
     { ...timing, fill: 'both' });
-  const inAnim = $app.animate([{ transform: `translate3d(${side * 100}vw,0,0)` }, { transform: 'translate3d(0,0,0)' }],
+  const slideIn = el => el.animate([{ transform: `translate3d(${side * 100}vw,0,0)` }, { transform: 'translate3d(0,0,0)' }],
     { ...timing, fill: 'backwards' });
-  turnAnims = [outAnim, inAnim];
+  let inAnims = [];
+  if (top) {
+    const was = stepPlace($app);
+    // the new task is drawn right after this (same moment, before the screen updates): then only
+    // the parts under its task icons slide in
+    queueMicrotask(() => {
+      const newTop = topOf($app);
+      let el = newTop ? newTop.nextElementSibling : null;
+      if (!newTop) inAnims.push(slideIn($app));
+      for (; el; el = el.nextElementSibling) inAnims.push(slideIn(el));
+      turnAnims.push(...inAnims, ...wakeIcon(was));
+    });
+  } else inAnims.push(slideIn($app));
+  turnAnims = [outAnim, ...inAnims];
   const end = () => { old.remove(); };
   outAnim.finished.then(end, end);
   setTimeout(() => { // also when animations never run (e.g. a hidden tab): end it anyway
     old.remove();
-    if (inAnim.playState !== 'finished') inAnim.cancel();
+    inAnims.forEach(a => { if (a.playState !== 'finished') a.cancel(); });
   }, 1000);
+}
+
+// From one task to the next the new task's icon wakes up with a small bounce.
+// stepPlace notes which task was current before the new task is drawn; wakeIcon plays it afterwards.
+function stepPlace(root) {
+  const row = root.querySelector('.step-icons');
+  const now = row && row.querySelector('.step-ic.now');
+  return now ? [...row.children].indexOf(now) : -1;
+}
+function wakeIcon(from) {
+  const row = $app.querySelector('.step-icons');
+  const now = row && row.querySelector('.step-ic.now');
+  const e = now && now.querySelector('.e');
+  if (from < 0 || !e || [...row.children].indexOf(now) === from) return [];
+  return [e.animate([{ transform: 'scale(.6)' }, { transform: 'scale(1.3)', offset: 0.5 }, { transform: 'scale(.92)', offset: 0.78 }, { transform: 'scale(1)' }],
+    { duration: 420, delay: 200, easing: 'ease-out', fill: 'backwards' })];
 }
 
 // Position of an element in the page's layout, ignoring animations (getBoundingClientRect
@@ -659,12 +800,13 @@ function render(entering = false) {
   const path = currentPath();
   fullScreenInTasks(path);
   clearConfetti();
-  if (shownPath !== null && path !== shownPath) pageTurn(pageDepth(path) < pageDepth(shownPath) ? 'back' : 'next');
+  const arriving = path !== shownPath;
+  if (shownPath !== null && arriving) pageTurn(pageDepth(path) < pageDepth(shownPath) ? 'back' : 'next');
   shownPath = path;
   let m;
   if (path === '/letters') renderAlphabet();
   else if ((m = path.match(/^\/letter\/(\d+)$/)) && LETTERS[+m[1]]) renderLetter(+m[1]);
-  else if (path === '/levels') renderLevels();
+  else if (path === '/levels') { renderLevels(); if (arriving) scrollToCurrentLevel(); }
   else if ((m = path.match(/^\/level\/(\d+)$/)) && LEVEL_DATA[+m[1]]) renderLevel(+m[1], entering);
   else if (path === '/settings') renderSettings();
   else if (path === '/inregistrare') renderRecorder();
@@ -745,7 +887,7 @@ function renderHome() {
     <div class="home">
       <button class="home-card" data-action="go" data-value="/letters">
         <span class="art"><span class="glyphs abc">A&nbsp;a&ensp;B&nbsp;b&ensp;C&nbsp;c</span></span>
-        <span class="label">${icon('grid')}<span>${T.alphabet}</span></span>
+        <span class="label"><span class="emoji-ic" aria-hidden="true">🔤</span><span>${T.alphabet}</span></span>
       </button>
       <button class="home-card levels-card" data-action="go" data-value="/levels">
         <span class="art"><span class="mini-map">${miniMap}</span></span>
@@ -809,6 +951,17 @@ function showLetter(i) {
    to its right (grey stars until passed, then golden); tapping again hides them. */
 let openGroup = -1; // the letter whose sublevels are shown (-1: none)
 
+// Opening Niveluri: the page scrolls by itself to the letter being learned now (when it is
+// further down), so it is seen without scrolling. It stays a little below the top bar.
+function scrollToCurrentLevel() {
+  const box = $app.querySelector('.letter-box.current');
+  if (!box) return;
+  const top = layoutTop(box); // (the page may be sliding in: its layout position, not the moving one)
+  if (top + box.offsetHeight <= window.innerHeight * 0.85) return; // already in view
+  window.scrollTo(0, Math.max(0, top - window.innerHeight * 0.3));
+  pageScroll = window.scrollY;
+}
+
 function renderLevels() {
   const next = nextLevel();
   const row = (g, k) => {
@@ -852,13 +1005,15 @@ function renderLevels() {
 }
 
 /* ---------- One level ----------
-   learn → trace → find → pair → read (syllables & words) → readquiz → result */
+   learn → trace → find → initial → pair → read (syllables & words) → readquiz → result */
 let lesson = null;
 
 // The steps of level i. Only the ⭐ level has the introduction page.
 function levelSteps(i) {
   const lv = LEVEL_DATA[i];
-  const steps = lv.stars === 1 ? ['learn', 'trace', 'find', 'pair'] : ['trace', 'find', 'pair'];
+  const steps = lv.stars === 1 ? ['learn', 'trace', 'find'] : ['trace', 'find'];
+  if (hasInitial(i)) steps.push('initial'); // which letter does the word start with
+  steps.push('pair');
   if (lv.items.length) steps.push('read');
   // the syllable quiz needs at least 2 different syllables/words learned (else there is nothing to choose between)
   if (itemsUpTo(i).length >= 2 && (lv.stars === 3 || lv.items.length)) steps.push('readquiz');
@@ -884,16 +1039,16 @@ function startLesson(i) {
     ...LEVEL_DATA[i].items.map(textKey),
     ...splitSyllables(LEVEL_DATA[i].items).map(textKey),
     ...Object.values(VOICE).map(v => v.key),
+    ...(hasInitial(i) ? lettersUpTo(i).flatMap(wordsStartingWith).map(textKey) : []),
   ]);
   // tracing: each letter of the level, first big, then small
   const traceList = LEVEL_DATA[i].letters.flatMap(l => [{ l, small: false }, { l, small: true }]);
-  lesson = { level: i, steps, step: 0, pos: 0, part: 0, right: 0, total: 0, log: [], traceList, find: null, pair: null, rq: null, passed: false };
+  lesson = { level: i, steps, step: 0, pos: 0, part: 0, right: 0, total: 0, log: [], traceList, find: null, initial: null, pair: null, rq: null, passed: false };
 }
 
 const stepName = () => lesson.steps[lesson.step];
 
-// Not passed: 👍 (good effort) when at least half was right, 🌱 (still growing) when less.
-const notPassedEmoji = () => (lesson.total && lesson.right / lesson.total >= 0.5 ? '👍' : '🌱');
+// Not passed: a thumbs up (good effort) when at least half was right, the growing plant when less (see notPassedFace).
 
 // One task done: right (on the first try) or not. The result screen shows them in order as dots.
 function scoreTask(right) {
@@ -916,26 +1071,71 @@ function forgetFromStep(k) {
 
 // The result without numbers: one dot per task in order, green = right, orange = not right.
 // Up to 8 dots in one line; more in two lines of equal length (with an odd number, the second has one less).
+// The dots pop in clearly one after another, 0.25 s apart. With many dots (more than 6) they come
+// a little faster, so all of them take about as long as 6 would plus a bit (never under 0.12 s apart).
+const resultDotGap = n => (n <= 6 ? 0.25 : Math.max(0.12, 1.6 / (n - 1))); // s
 const resultDots = () => {
   const n = lesson.log.length;
-  const dot = (ok, k) => `<i class="${ok ? 'ok' : 'miss'}" style="animation-delay:${0.15 + k * 0.06}s"></i>`;
+  const dot = (ok, k) => `<i class="${ok ? 'ok' : 'miss'}" style="animation-delay:${(0.15 + k * resultDotGap(n)).toFixed(2)}s"></i>`;
   const first = n > 8 ? Math.ceil(n / 2) : n;
   const row = (from, to) => `<div class="row">${lesson.log.slice(from, to).map((ok, k) => dot(ok, from + k)).join('')}</div>`;
   return `<div class="result-dots" style="--cols:${Math.max(1, first)}" aria-label="${lesson.right} / ${lesson.total}">${
     row(0, first)}${first < n ? row(first, n) : ''}</div>`;
 };
 
-// The level's name at the top.
+// The level's name at the top, with its stars beside the letters: "M m ⭐⭐".
 const levelHeader = () => (lesson.practice
   ? `<div class="level-label" aria-label="${T.practice}">🔁</div>`
-  : `<div class="level-label">${levelText(lesson.level)}</div>`);
-// The level's stars, in the top right corner, labelled as its difficulty.
-const difficultyBadge = () => (lesson.practice ? ''
-  : `<div class="difficulty"><span class="stars">${stars(lesson.level)}</span><small>${T.difficulty}</small></div>`);
+  : `<div class="level-label"><span>${levelText(lesson.level)}<span class="lv-stars">${'<i>⭐</i>'.repeat(LEVEL_DATA[lesson.level].stars)}</span></span></div>`);
 
-// Test mode: go straight to exercise k of the level.
+// The speech bubble with one dot per question of the task. In test mode with small ‹ › beside the
+// dots, to go to the previous / next question of the task (k: the question shown now).
+function questionBubble(dots, count, k, extra = '') {
+  const jump = (action, label, name, off) =>
+    `<button class="q-jump" data-action="${action}" aria-label="${label}"${off ? ' disabled' : ''}>${icon(name)}</button>`;
+  const inner = `<div class="dots${count > 6 ? ' many' : ''}">${dots}</div>`;
+  return `<div class="q-bubble${extra}${settings.testMode ? ' jumping' : ''}"><span class="q-tip"></span>${
+    settings.testMode ? jump('qPrev', T.previous, 'left', k <= 0) + inner + jump('qNext', T.next, 'right', false) : inner}</div>`;
+}
+
+// Test mode: the results of this task are the given ones (the others are forgotten).
+function rescoreStep(results) {
+  forgetFromStep(lesson.step);
+  results.forEach(r => { if (r === true || r === false) scoreTask(r); });
+}
+
+// Test mode: go d questions back or on inside the task (tracing letters, listening quizzes).
+// On past the last question goes to the next task; a skipped question counts neither way.
+function jumpQuestion(d) {
+  const name = stepName();
+  stopSound();
+  if (name === 'trace') {
+    const k = lesson.pos + d;
+    if (k < 0) return;
+    if (trace) stopDemo();
+    if (k >= lesson.traceList.length) return nextStep();
+    lesson.traceRes = lesson.traceRes.slice(0, k);
+    rescoreStep(lesson.traceRes);
+    lesson.pos = k;
+    return renderTrace();
+  }
+  if (!['find', 'initial', 'readquiz'].includes(name)) return;
+  const quiz = currentQuiz();
+  const now = quiz.q && quiz.q.done ? quiz.results.length - 1 : quiz.results.length;
+  const k = now + d;
+  if (k < 0) return;
+  if (k >= quiz.length) return nextStep();
+  quiz.results = quiz.results.slice(0, k);
+  while (quiz.results.length < k) quiz.results.push(null); // skipped
+  rescoreStep(quiz.results);
+  nextQuestion(quiz);
+  renderChoice(quiz);
+  playQuestion(quiz);
+}
+
+// Test mode: go straight to exercise k of the level (the last step is the result screen).
 function jumpToStep(k) {
-  const last = lesson.steps.length - 2;
+  const last = lesson.steps.length - 1;
   k = Math.max(0, Math.min(last, k));
   stopSound();
   stopPairDemo();
@@ -953,17 +1153,20 @@ const STEP_ICONS = {
   learn: '👀',                       // a new letter: look
   trace: '✍️',                       // write with the finger
   find: '👂',                        // listen and find the letter
+  initial: '👄',                     // a picture and its word: which letter does it start with
   pair: '🧩',                        // big and small letters that belong together
   read: '📖',                        // new syllables and words: listen and read
   readquiz: '👂',                    // listen and find the syllable / word
   match: '🖼️',                       // picture and word
 };
 function stepDots() {
+  // a finished task is always green: mistakes are shown only at the end, in the result dots
+  const state = k => (k < lesson.step ? 'ok' : k === lesson.step ? 'now' : 'next');
   const dots = lesson.steps.slice(0, -1)
-    .map((name, k) => `<i class="step-ic s-${name} ${k < lesson.step ? 'ok' : k === lesson.step ? 'now' : 'next'}"><span class="e">${STEP_ICONS[name] || ''}</span></i>`).join('');
+    .map((name, k) => `<i class="step-ic s-${name} ${state(k)}"><span class="e">${STEP_ICONS[name] || ''}</span></i>`).join('');
   const row = `<div class="step-icons">${dots}</div>`;
   if (!settings.testMode) return row;
-  const last = lesson.steps.length - 2; // the last exercise before the result
+  const last = lesson.steps.length - 1; // ▶ on the last exercise goes on to the result (celebration)
   return `<div class="step-jump">
     <button class="jump-btn" data-action="stepPrev" aria-label="${T.previous}"${lesson.step <= 0 ? ' disabled' : ''}>${icon('left')}</button>
     ${row}
@@ -971,7 +1174,10 @@ function stepDots() {
   </div>`;
 }
 
-const levelTopBar = () => topBar({ left: backButton(lesson.practice ? '/' : '/levels'), center: levelHeader(), right: difficultyBadge() }) + stepDots();
+// The top bar of a level: the same on its tasks and on its result screen, so it stays still between them.
+// right: only the result screen's test-mode ▶ (as wide as the empty space, so the name does not move)
+const levelBar = (right = '') => topBar({ left: backButton(lesson.practice ? '/' : '/levels'), center: levelHeader(), right });
+const levelTopBar = () => levelBar() + stepDots();
 
 function renderLevel(i, entering) {
   if (!isOpen(i)) {
@@ -983,6 +1189,7 @@ function renderLevel(i, entering) {
   if (name === 'learn') renderLearn();
   else if (name === 'trace') renderTrace();
   else if (name === 'find') renderChoice(lesson.find);
+  else if (name === 'initial') renderChoice(lesson.initial);
   else if (name === 'pair') renderPair();
   else if (name === 'match') renderMatch();
   else if (name === 'read') renderRead();
@@ -1002,17 +1209,18 @@ function nextStep(turn = 'next') {
   if (lesson.practice) {
     if (name === 'result') finishLevel();
     window.scrollTo(0, 0);
-    pageTurn(turn);
+    pageTurn(turn, name === 'result' ? 'bar' : true); // the top stays still (to the result: only the top bar)
     renderPractice(false);
     return playStepStart();
   }
   if (name === 'find') lesson.find = makeFindQuiz(i);
+  if (name === 'initial') lesson.initial = makeInitialQuiz(i);
   if (name === 'pair') lesson.pair = makePair(i);
   if (name === 'match') lesson.match = makeMatch(i);
   if (name === 'readquiz') lesson.rq = makeReadQuiz(i);
   if (name === 'result') finishLevel();
   window.scrollTo(0, 0);
-  pageTurn(turn);
+  pageTurn(turn, name === 'result' ? 'bar' : true); // the top stays still (to the result: only the top bar)
   renderLevel(i, false);
   playStepStart();
 }
@@ -1020,7 +1228,7 @@ function nextStep(turn = 'next') {
 // Spoken instructions at the start of a task: the full one in ⭐ levels,
 // a short one from ⭐⭐ on and in Exersează (e.g. "Formează perechi.").
 const withIntro = () => !lesson.practice && LEVEL_DATA[lesson.level].stars === 1;
-const instruction = name => (withIntro() ? name : { trace: 'traceShort', find: 'findShort', pair: 'pairShort', match: 'pairShort' }[name]);
+const instruction = name => (withIntro() ? name : { trace: 'traceShort', find: 'findShort', initial: 'initialShort', pair: 'pairShort', match: 'pairShort' }[name]);
 // From ⭐⭐ on, a moment of quiet after entering a task, before anything is said.
 const START_QUIET = 600; // ms
 const withQuiet = () => !lesson.practice && LEVEL_DATA[lesson.level].stars >= 2;
@@ -1048,6 +1256,7 @@ function startStepSound() {
   // from ⭐⭐ on a short one without the demo (the 🔊 button still plays the full instruction and demo)
   const intro = withIntro();
   if (name === 'find') instructionThenQuestion(instruction('find'), lesson.find);
+  if (name === 'initial') instructionThenQuestion(instruction('initial'), lesson.initial);
   if (name === 'pair' || name === 'match') {
     speakInstruction(instruction(name));
     if (intro) setTimeout(() => { if (lesson && stepName() === name) playPairDemo(); }, 700);
@@ -1106,7 +1315,9 @@ const STROKES = {
   M: { w: 72, strokes: [[[0, 100], [0, 0], [36, 62], [72, 0], [72, 100]]] },
   m: { w: 68, strokes: [line(0, 40, 0, 100), join(arc(17, 58, 17, 16, 180, 360), line(34, 58, 34, 100)), join(arc(51, 58, 17, 16, 180, 360), line(68, 58, 68, 100))] },
   A: { w: 64, strokes: [line(0, 100, 32, 0), line(32, 0, 64, 100), line(13, 62, 51, 62)] },
-  a: { w: 40, strokes: [arc(20, 70, 20, 30, 330, -20), line(40, 40, 40, 100)] },
+  // the printed a (as shown everywhere in the app): 1. the hook over the top and down the stem,
+  // 2. the round belly at the bottom, from the stem round to the left and back
+  a: { w: 40, strokes: [join(arc(20, 56, 18, 14, 200, 360), line(38, 56, 38, 100)), arc(20, 84, 19, 15, 320, 20)] },
   N: { w: 58, strokes: [[[0, 100], [0, 0], [58, 100], [58, 0]]] },
   n: { w: 40, strokes: [line(0, 40, 0, 100), join(arc(20, 58, 20, 18, 180, 360), line(40, 58, 40, 100))] },
   E: { w: 50, strokes: [[[50, 0], [0, 0], [0, 100], [50, 100]], line(0, 50, 42, 50)] },
@@ -1118,6 +1329,10 @@ const STROKES = {
 const TRACE_COVER = 0.7;    // at least this share of the middle of the grey line must be covered
 const TRACE_OUTSIDE = 0.2;  // at most this share of the drawing may be off the grey line
 const TRACE_TRIES = 3;      // after this many tries the learner may go on anyway
+// The learner's line: thinner than the grey guide (a share of its thickness). The check looks at
+// a thin middle line of the guide (TRACE_MIDDLE), so a hand may wander as far as with a thick pen.
+const TRACE_INK = 0.77;
+const TRACE_MIDDLE = TRACE_INK - 0.4; // the hand may be off by the same amount whatever the pen size
 
 // The strokes of "M m", placed in a box of W × H pixels.
 // The strokes of one letter shape (e.g. "M" or "m"), as big as fits in W × H pixels.
@@ -1192,7 +1407,7 @@ function renderTrace() {
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="page">
-      <div class="q-bubble trace-bubble"><span class="q-tip"></span><div class="dots${lesson.traceList.length > 6 ? ' many' : ''}">${dots}</div></div>
+      ${questionBubble(dots, lesson.traceList.length, lesson.pos, ' trace-bubble')}
       <div class="trace-wrap">
         <div class="trace-guide-text"><span class="glyphs">${ch}</span></div>
         <canvas class="trace-guide"></canvas>
@@ -1223,7 +1438,7 @@ function renderTrace() {
     fitGuide(wrap, wrap.querySelector('.trace-guide-text .glyphs'));
     setFinishEnabled(true); // not checked, so the learner can always go on
   }
-  setupInk(wrap.querySelector('.trace-canvas'), layout ? layout.width * 0.9 : null);
+  setupInk(wrap.querySelector('.trace-canvas'), layout ? layout.width * TRACE_INK : null);
   if (layout) {
     sayTraceLetter(l);
     // the finger shows how to write it (⭐⭐⭐ and Exersează: only with 👆)
@@ -1359,6 +1574,31 @@ function traceResult(kind) {
   el.innerHTML = kind === 'good' ? icon('check') : kind === 'bad' ? icon('cross') : '';
 }
 
+// Where the tip of the 👆 finger is inside the emoji drawn at this size (each phone draws the
+// emoji a little differently): its topmost point, so the fingertip sits right on the line.
+const fingerTips = {};
+function fingerTip(size) {
+  if (fingerTips[size]) return fingerTips[size];
+  let tip = { x: size * 0.4, y: size * 0.08 };
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = Math.ceil(size * 1.5);
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.font = `${size}px sans-serif`;
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.fillText('👆', 0, 0);
+    const { data, width: w } = g.getImageData(0, 0, c.width, c.height);
+    found: for (let y = 0; y < c.height; y++) {
+      // the middle of the topmost row of the finger
+      let first = -1, last = -1;
+      for (let x = 0; x < w; x++) if (data[(y * w + x) * 4 + 3] > 100) { if (first < 0) first = x; last = x; }
+      if (first >= 0) { tip = { x: (first + last) / 2, y: y + size * 0.03 }; break found; }
+    }
+  } catch (e) {}
+  return (fingerTips[size] = tip);
+}
+
 // Finger demo: draws the letter stroke by stroke, with a finger moving along.
 function playDemo() {
   if (!trace || !trace.layout || !trace.demo) return;
@@ -1413,10 +1653,12 @@ function playDemo() {
     ctx.strokeStyle = color;
     ctx.stroke();
     // the finger
-    ctx.font = `${Math.round(width * 2.4)}px sans-serif`;
+    const size = Math.round(width * 2.4);
+    ctx.font = `${size}px sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('👆', finger[0] - width * 0.75, finger[1] - width * 0.2);
+    const tip = fingerTip(size);
+    ctx.fillText('👆', finger[0] - tip.x, finger[1] - tip.y);
 
     if (travelled >= goal) {
       strokeIndex++;
@@ -1468,9 +1710,9 @@ function scoreTrace() {
     drawStrokes(ctx, [stroke], lineWidth, '#000');
     return ctx.getImageData(0, 0, w, h).data;
   };
-  const middle = mask(width * 0.5);
+  const middle = mask(width * TRACE_MIDDLE);
   const allowed = mask(width * 2);
-  const perStroke = strokes.map(st => mask1(st, width * 0.5));
+  const perStroke = strokes.map(st => mask1(st, width * TRACE_MIDDLE));
   const inkCanvas = document.createElement('canvas');
   inkCanvas.width = w;
   inkCanvas.height = h;
@@ -1532,7 +1774,8 @@ function traceCheck() {
     $app.querySelector('.trace-wrap').classList.add('good');
     const here = lesson;
     const step = lesson.step;
-    setTimeout(() => { if (stillHere(here, step)) traceNextLetter(); }, 1600);
+    const pos = lesson.pos;
+    setTimeout(() => { if (stillHere(here, step) && lesson.pos === pos) traceNextLetter(); }, 1600);
     return;
   }
   soundWrong();
@@ -1601,6 +1844,54 @@ function makeFindQuiz(i) {
     const fresh = findFresh(i);
     quiz.plan = [true, ...shuffle(Array.from({ length: quiz.length - 1 }, (_, k) => k < fresh - 1))];
   }
+  nextQuestion(quiz);
+  return quiz;
+}
+
+/* "Which letter does it start with?": a picture, its word is spoken, the learner taps the first letter.
+   Only words starting with learned letters; the level's letter is asked most often. */
+// Words with a picture for this task: the learner's own picture words (WORD_PICTURES) and the
+// example words of Alfabetul, and INITIAL_WORDS (letters.js). "ea" is left out: it sounds like "ia".
+const WORD_BANK = (() => {
+  const bank = {};
+  for (const l of LETTERS) if (l.word && l.pic) bank[l.word] = l.pic;
+  if (typeof WORD_PICTURES === 'object') for (const w of Object.keys(WORD_PICTURES)) bank[w] = WORD_PICTURES[w];
+  if (typeof INITIAL_WORDS === 'object') Object.assign(bank, INITIAL_WORDS);
+  delete bank.ea;
+  return bank;
+})();
+const firstLetter = w => w.toLocaleLowerCase('ro')[0];
+const wordsStartingWith = l => Object.keys(WORD_BANK).filter(w => firstLetter(w) === l.lower);
+// questions: 3 in ⭐ and ⭐⭐ (choices 2, 2, 3), 4 in ⭐⭐⭐ (choices 2, 2, 3, 3)
+const initialLength = i => (LEVEL_DATA[i].stars === 3 ? 4 : 3);
+const initialChoices = i => Array.from({ length: initialLength(i) }, (_, k) => Math.min(3, 2 + Math.floor(k / 2)));
+// Only in ⭐⭐ and ⭐⭐⭐ levels, from I on (a, m, i learned), and only with a word for the level's letter.
+const hasInitial = i => LEVEL_DATA[i].stars >= 2 && lettersUpTo(i).length >= 3
+  && LEVEL_DATA[i].letters.some(l => wordsStartingWith(l).length);
+const initialFresh = () => 2; // questions with the level's letter (the first one always)
+
+function makeInitialQuiz(i) {
+  const pool = lettersUpTo(i).filter(l => wordsStartingWith(l).length);
+  const focus = LEVEL_DATA[i].letters.filter(l => pool.includes(l));
+  const quiz = {
+    kind: 'letter',
+    words: true,
+    pool,
+    focus,
+    extras: lettersAfter(i, pool),
+    length: initialLength(i),
+    options: 3,
+    grow: true,
+    weight: () => 1,
+    usedWords: [],
+    results: [],
+    last: null,
+    q: null,
+  };
+  // the first question always asks the level's letter, the others a mix in a random order
+  quiz.plan = pool.length > focus.length
+    ? [true, ...shuffle(Array.from({ length: quiz.length - 1 }, (_, k) => k < initialFresh(i) - 1))]
+    : Array(quiz.length).fill(true);
   nextQuestion(quiz);
   return quiz;
 }
@@ -1691,8 +1982,18 @@ function nextQuestion(quiz) {
   quiz.sameRun = key === quiz.lastKey ? (quiz.sameRun || 0) + 1 : 0;
   quiz.lastKey = key;
 
+  let word = null;
+  if (quiz.words) {
+    const list = wordsStartingWith(target);
+    const unused = list.filter(w => !quiz.usedWords.includes(w));
+    word = shuffle(unused.length ? unused : list.filter(w => w !== quiz.lastWord))[0] || list[0];
+    quiz.usedWords.push(word);
+    quiz.lastWord = word;
+  }
+
   quiz.q = {
     target,
+    word,
     options,
     cases: quiz.kind === 'letter' ? letterCases(options, !!twin) : null, // big or small, per choice
     firstTry: true,
@@ -1732,7 +2033,8 @@ function optionText(quiz, item) {
 function playQuestion(quiz, delay = 0) {
   const t = quiz.q.target;
   rippleSound(undefined, delay);
-  if (quiz.kind === 'text') playText(t, delay);
+  if (quiz.q.word) playText(quiz.q.word, delay);   // the word whose first letter is asked
+  else if (quiz.kind === 'text') playText(t, delay);
   else playLetter(t, delay);
 }
 
@@ -1753,8 +2055,10 @@ function renderChoice(quiz) {
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="quiz">
-      <div class="q-bubble"><span class="q-tip"></span><div class="dots${quiz.length > 6 ? ' many' : ''}">${dots}</div></div>
-      <button class="listen-btn" data-action="listen" aria-label="${T.listen}">${icon('volume')}</button>
+      ${questionBubble(dots, quiz.length, quiz.results.length)}
+      ${q.word
+        ? `<button class="listen-btn word-card" data-action="listen" aria-label="${T.listen}">${pictureHTML(WORD_BANK[q.word])}<span class="ear">${icon('volume')}</span></button>`
+        : `<button class="listen-btn" data-action="listen" aria-label="${T.listen}">${icon('volume')}</button>`}
       <div class="options" style="--cols:${cols}">${options}</div>
     </div>`;
   placeBubbleTip();
@@ -1802,7 +2106,7 @@ function refitTrace() {
   const ink = sizeCanvas(wrap.querySelector('.trace-canvas')).ctx; // (resizing resets the pen: set it again)
   ink.lineCap = 'round';
   ink.lineJoin = 'round';
-  ink.lineWidth = layout.width * 0.9;
+  ink.lineWidth = layout.width * TRACE_INK;
   ink.strokeStyle = ink.fillStyle = cssVar('--accent') || '#1E4FB5';
   if (!lesson.practice && LEVEL_DATA[lesson.level].stars < 3) playDemo();
 }
@@ -1844,7 +2148,7 @@ async function instructionThenQuestion(name, quiz) {
   if (token === playToken) playQuestion(quiz);
 }
 
-const currentQuiz = () => (stepName() === 'find' ? lesson.find : lesson.rq);
+const currentQuiz = () => ({ find: lesson.find, initial: lesson.initial }[stepName()] || lesson.rq);
 const stillHere = (l, step) => lesson === l && l.step === step && currentPath() === (l.practice ? '/exercitiu' : '/level/' + l.level);
 
 function answer(i, button) {
@@ -1859,12 +2163,12 @@ function answer(i, button) {
     q.done = true;
     button.classList.add('correct');
     soundRight();
-    if (quiz.kind === 'letter') recordLetter(q.target, q.firstTry); // the asked letter: right on the first try or not
+    if (quiz.kind === 'letter' && !quiz.words) recordLetter(q.target, q.firstTry); // the asked letter: right on the first try or not
     quiz.results.push(q.firstTry);
     scoreTask(q.firstTry);
 
     setTimeout(() => {
-      if (!stillHere(here, step)) return;
+      if (!stillHere(here, step) || quiz.q !== q) return; // (test mode may have moved to another question)
       if (quiz.results.length >= quiz.length) return nextStep();
       nextQuestion(quiz);
       renderChoice(quiz);
@@ -1873,7 +2177,7 @@ function answer(i, button) {
   } else {
     q.firstTry = false;
     q.wrong.push(i);
-    if (quiz.kind === 'letter') recordLetter(q.options[i], false); // the letter tapped by mistake is not known well either
+    if (quiz.kind === 'letter' && !quiz.words) recordLetter(q.options[i], false); // the letter tapped by mistake is not known well either
     button.classList.add('wrong', 'shake');
     button.disabled = true;
     soundWrong();
@@ -2001,11 +2305,16 @@ function pick(value, button) {
   const [side, lower] = value.split(':');
   const l = BY_LOWER.get(lower);
   playLetter(l);
-  if (!p.sel || p.sel.side === side) {
+  if (!p.sel) {
     p.sel = { side, l };
     return renderPair();
   }
-  if (p.sel.l === l) {
+  if (p.sel.side === side && p.sel.l === l) { // the same card again: not chosen any more
+    p.sel = null;
+    return renderPair();
+  }
+  // big and small letters are mixed, so two big (or two small) letters are a wrong pair too
+  if (p.sel.side !== side && p.sel.l === l) {
     p.matched.push(l);
     p.sel = null;
     soundRight();
@@ -2020,17 +2329,24 @@ function pick(value, button) {
     }
   } else {
     const first = p.sel.l;
-    if (!p.missed.includes(first)) p.missed.push(first);
+    const firstValue = `${p.sel.side}:${first.lower}`;
+    if (!p.missed.includes(first)) p.missed.push(first); // counts as a mistake of this game
     p.sel = null;
     soundWrong();
     playLetter(first, 0.45); // say the letter they were matching again
     renderPair();
-    const again = $app.querySelector(`[data-value="${value}"]`);
-    if (again) again.classList.add('shake');
+    markWrongPair([firstValue, value]);
   }
 }
 
-// The two cards that were just paired turn green smoothly (the others are already green).
+// A wrong pair: both cards turn red and shake for a moment, then are plain again.
+function markWrongPair(values) {
+  const cards = values.map(v => [...$app.querySelectorAll('.pair-btn')].find(el => el.dataset.value === v)).filter(Boolean);
+  cards.forEach(b => b.classList.add('bad', 'shake'));
+  setTimeout(() => cards.forEach(b => b.classList.remove('bad', 'shake')), 900);
+}
+
+// The two cards that were just paired jump up a little and turn green (the others are already green).
 function markJustMatched(values) {
   values.forEach(v => {
     const b = [...$app.querySelectorAll('.pair-btn')].find(el => el.dataset.value === v);
@@ -2110,12 +2426,12 @@ function pickMatch(value) {
     }
   } else {
     const first = m.sel.word;
+    const firstValue = `${m.sel.side}:${first}`;
     if (!m.missed.includes(first)) m.missed.push(first);
     m.sel = null;
     soundWrong();
     renderMatch();
-    const again = $app.querySelector(`[data-value="${value}"]`);
-    if (again) again.classList.add('shake');
+    markWrongPair([firstValue, value]);
   }
 }
 
@@ -2123,18 +2439,18 @@ function pickMatch(value) {
 function renderRead() {
   const level = LEVEL_DATA[lesson.level];
   const pictures = typeof WORD_PICTURES === 'object' ? WORD_PICTURES : {};
+  // syllables and words in one list, one under the other (no headings: no difference made)
   const tiles = (list, withPictures) => list.map(t => {
     const pic = withPictures && pictures[t];
     // under the syllable or word, the letters it is made of: nu → n + u
     const parts = presentParts(t).map(p => `<span class="p">${markLevelLetter(p, true)}</span>`).join('<i>+</i>');
-    return `<button class="read-btn${pic ? ' with-pic' : ''}" data-action="readItem" data-value="${t}">${pic ? pictureHTML(pic) : ''}<span class="w">${markLevelLetter(t, true)}</span><span class="parts">${parts}</span><span class="corner">${icon('volume')}</span></button>`;
+    return `<button class="read-btn${pic ? ' with-pic' : ''}" data-action="readItem" data-value="${t}">${pic ? pictureHTML(pic) : ''}<span class="txt"><span class="w">${markLevelLetter(t, true)}</span><span class="parts">${parts}</span></span><span class="corner">${icon('volume')}</span></button>`;
   }).join('');
   $app.innerHTML = `
     ${levelTopBar()}
     <div class="page">
       <button class="listen-btn small" data-action="readAll" aria-label="${T.listen}">${icon('volume')}</button>
-      ${level.syllables.length ? `<h2 class="section">${T.syllables}</h2><div class="read-grid">${tiles(level.syllables)}</div>` : ''}
-      ${level.words.length ? `<h2 class="section">${T.words}</h2><div class="read-grid">${tiles(level.words, true)}</div>` : ''}
+      <div class="read-list">${tiles(level.syllables)}${tiles(level.words, true)}</div>
       <div class="nav-row">
         <button class="nav-btn primary" data-action="nextStep" aria-label="${T.next}">${icon('right')}</button>
       </div>
@@ -2300,14 +2616,12 @@ function renderPractice(entering) {
 function finishLevel() {
   if (lesson.practice) { // practice opens nothing: it only shows how it went
     lesson.passed = lesson.total > 0 && lesson.right / lesson.total >= 0.8;
-    if (lesson.passed) soundPassed();
-    return;
+    return; // (the celebration's sounds come with its animation: see celebrate)
   }
   lesson.passed = lesson.total > 0 && lesson.right / lesson.total >= passRatio(lesson.level);
   if (lesson.passed) {
     progress.done[levelKey(lesson.level)] = true;
     saveProgress();
-    soundPassed();
   }
 }
 
@@ -2366,79 +2680,302 @@ const POPPER_SVG = `<svg viewBox="180 30 440 440" aria-hidden="true">
   </g>
 </svg>`;
 
+// Not passed yet (less than half right): a seedling grows out of the soil and keeps swaying
+// (from the "Growing plant" design): it is still growing, like the learner.
+const PLANT_SVG = `<svg viewBox="30 30 180 180" aria-hidden="true">
+  <defs>
+  <linearGradient id="plStem" x1="0" y1="0" x2="1" y2="0">
+  <stop offset="0" stop-color="#C4EE6A"/>
+  <stop offset=".55" stop-color="#93D645"/>
+  <stop offset="1" stop-color="#6FBE35"/>
+  </linearGradient>
+  <linearGradient id="plLeafL" gradientUnits="userSpaceOnUse" x1="-86" y1="-30" x2="0" y2="4">
+  <stop offset="0" stop-color="#9AD94A"/>
+  <stop offset="1" stop-color="#C8F06E"/>
+  </linearGradient>
+  <linearGradient id="plLeafR" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="66" y2="-20">
+  <stop offset="0" stop-color="#B8EA62"/>
+  <stop offset="1" stop-color="#80CC3C"/>
+  </linearGradient>
+  <radialGradient id="plSoil" cx="100" cy="150" r="70" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#B57A70"/>
+  <stop offset=".6" stop-color="#94574F"/>
+  <stop offset="1" stop-color="#7A4440"/>
+  </radialGradient>
+  </defs>
+  <g>
+  <ellipse class="pl-a pl-shadow" cx="120" cy="192" rx="62" ry="6" fill="#3B2418"/>
+  <g class="pl-sway">
+  <g class="pl-a pl-stem">
+  <rect x="114" y="74" width="12" height="80" rx="6" fill="url(#plStem)"/>
+  <path d="M117.5 80 V146" stroke="#E6FAB0" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(118 78)">
+  <g class="pl-flutter">
+  <g class="pl-a pl-leafL">
+  <path d="M0 0 C-18 -30 -60 -38 -86 -28 C-68 -20 -52 6 0 6 Z" fill="url(#plLeafL)"/>
+  <path d="M-4 1 C-26 -10 -50 -20 -78 -26" fill="none" stroke="#E6FAB0" stroke-opacity=".75" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  </g>
+  </g>
+  <g transform="translate(122 102)">
+  <g class="pl-flutter" style="animation-delay: -1.1s; animation-direction: reverse">
+  <g class="pl-a pl-leafR">
+  <path d="M0 0 C14 -22 46 -28 66 -20 C56 -4 36 12 0 8 Z" fill="url(#plLeafR)"/>
+  <path d="M3 3 C20 -6 38 -13 58 -18" fill="none" stroke="#E6FAB0" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  </g>
+  </g>
+  </g>
+  <g class="pl-a pl-soil">
+  <path d="M64 190 C64 160 88 138 120 138 C152 138 176 160 176 190 Z" fill="url(#plSoil)"/>
+  <path d="M64 190 H176" stroke="#6B3836" stroke-width="3" stroke-linecap="round"/>
+  <path d="M80 166 C88 152 100 146 112 144" fill="none" stroke="#D7A39A" stroke-opacity=".45" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="138" cy="160" r="2.2" fill="#6E3B37" fill-opacity=".5"/>
+  <circle cx="102" cy="172" r="1.8" fill="#6E3B37" fill-opacity=".5"/>
+  <circle cx="152" cy="176" r="1.6" fill="#6E3B37" fill-opacity=".5"/>
+  </g>
+  <g fill="#8C524B">
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="3" style="--cx: -22px; --cy: -18px"/>
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="2.4" style="--cx: 18px; --cy: -22px"/>
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="2" style="--cx: -10px; --cy: -26px"/>
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="2.6" style="--cx: 28px; --cy: -10px"/>
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="1.8" style="--cx: -30px; --cy: -6px"/>
+  <circle class="pl-a pl-crumb" cx="120" cy="140" r="2" style="--cx: 8px; --cy: -30px"/>
+  </g>
+  <g fill="#F4C430">
+  <path class="pl-a pl-spark" d="M44 70 C45 75 46 76 51 77 C46 78 45 79 44 84 C43 79 42 78 37 77 C42 76 43 75 44 70 Z"/>
+  <path class="pl-a pl-spark" style="animation-delay: .12s" d="M194 74 C195 78 196 79 200 80 C196 81 195 82 194 86 C193 82 192 81 188 80 C192 79 193 78 194 74 Z"/>
+  <path class="pl-a pl-spark" style="animation-delay: .22s" d="M150 46 C151 49 152 50 155 51 C152 52 151 53 150 56 C149 53 148 52 145 51 C148 50 149 49 150 46 Z"/>
+  </g>
+  </g>
+</svg>`;
+// Not passed, but half or more right: a hand swings up and gives a thumbs up, its thumb shining
+// (from the "Thumbs up" design). Plays once.
+const THUMB_SVG = `<svg viewBox="6 6 210 210" aria-hidden="true">
+  <defs>
+  <linearGradient id="thSkin" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#FFD866"/>
+  <stop offset=".55" stop-color="#FDB833"/>
+  <stop offset="1" stop-color="#F08C1E"/>
+  </linearGradient>
+  <linearGradient id="thThumb" x1="0" y1="0" x2="1" y2="0">
+  <stop offset="0" stop-color="#F7A52A"/>
+  <stop offset=".6" stop-color="#FFC94A"/>
+  <stop offset="1" stop-color="#FFDB70"/>
+  </linearGradient>
+  <linearGradient id="thFinger" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#FFE38A"/>
+  <stop offset=".6" stop-color="#FFC642"/>
+  <stop offset="1" stop-color="#F3A12A"/>
+  </linearGradient>
+  </defs>
+  <g>
+  <ellipse class="th-a th-shadow" cx="118" cy="214" rx="58" ry="6" fill="#3B2A10"/>
+  <g class="th-a th-hand">
+  <g class="th-a th-thumb">
+  <path d="M78 128 C76 100 84 74 94 52 C100 38 120 38 122 54 C124 70 116 90 122 118 Z" fill="url(#thThumb)"/>
+  <path d="M100 50 C106 44 114 46 116 54" fill="none" stroke="#FFF1C2" stroke-opacity=".8" stroke-width="4" stroke-linecap="round"/>
+  <path d="M88 110 C86 90 90 72 96 60" fill="none" stroke="#FFF1C2" stroke-opacity=".35" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <path d="M66 140 C66 120 80 110 98 110 L130 112 L134 200 L100 204 C80 204 66 190 66 170 Z" fill="url(#thSkin)"/>
+  <path d="M74 150 C74 132 82 122 94 118" fill="none" stroke="#FFF1C2" stroke-opacity=".4" stroke-width="6" stroke-linecap="round"/>
+  <g class="th-a th-f"><rect x="114" y="110" width="62" height="24" rx="12" fill="url(#thFinger)"/></g>
+  <g class="th-a th-f" style="animation-delay: .04s"><rect x="114" y="133" width="64" height="24" rx="12" fill="url(#thFinger)"/></g>
+  <g class="th-a th-f" style="animation-delay: .08s"><rect x="114" y="156" width="60" height="24" rx="12" fill="url(#thFinger)"/></g>
+  <g class="th-a th-f" style="animation-delay: .12s"><rect x="114" y="179" width="50" height="23" rx="11.5" fill="url(#thFinger)"/></g>
+  <path d="M118 134 H170 M118 157 H172 M118 180 H160" stroke="#E8901F" stroke-opacity=".35" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <path class="th-a th-ray" pathLength="100" d="M108 24 L108 10"/>
+  <path class="th-a th-ray" pathLength="100" style="animation-delay: .03s" d="M128 30 L138 20"/>
+  <path class="th-a th-ray" pathLength="100" style="animation-delay: .05s" d="M86 30 L76 20"/>
+  <path class="th-a th-ray" pathLength="100" style="animation-delay: .07s" d="M138 50 L152 46"/>
+  <path class="th-a th-ray" pathLength="100" style="animation-delay: .09s" d="M76 50 L62 46"/>
+  <g fill="#F4B400">
+  <path class="th-a th-spark" d="M168 70 C169 75 170 76 175 77 C170 78 169 79 168 84 C167 79 166 78 161 77 C166 76 167 75 168 70 Z"/>
+  <path class="th-a th-spark" style="animation-delay: .1s" d="M50 82 C51 86 52 87 56 88 C52 89 51 90 50 94 C49 90 48 89 44 88 C48 87 49 86 50 82 Z"/>
+  </g>
+  </g>
+</svg>`;
+const notPassedFace = () => (lesson.total && lesson.right / lesson.total >= 0.5
+  ? `<div class="thumb">${THUMB_SVG}</div>`
+  : `<div class="plant">${PLANT_SVG}</div>`);
+
+// Passed: two party poppers, on the left and on the right (mirrored), both shooting confetti.
+// Between them, above the result dots, the place where the level's stars land (see flyStars).
+const partyHTML = n => `<div class="party">
+  <div class="popper">${POPPER_SVG}</div>
+  <div class="star-slot n${n}">${'<i>⭐</i>'.repeat(n)}</div>
+  <div class="popper flip">${POPPER_SVG}</div>
+</div>`;
+
+// Test mode: a button in the top right corner of the result screen plays it all again from the
+// start (dots, picture, buttons), to look at the animations.
+const replayResultButton = () => (settings.testMode
+  ? `<button class="icon-btn replay-result" data-action="replayResult" aria-label="${T.replay || 'Replay'}">${icon('play')}</button>` : '');
+
 function renderResult() {
-  // passed: the party popper bursts; not passed: a kind emoji (👍 / 🌱)
-  const face = lesson.passed ? `<div class="popper">${POPPER_SVG}</div>` : `<div class="emoji">${notPassedEmoji()}</div>`;
+  // passed: the party popper bursts; not passed: the thumbs up (half or more right) or the growing plant
+  const face = lesson.passed ? partyHTML(lesson.practice ? 0 : LEVEL_DATA[lesson.level].stars) : notPassedFace();
   if (lesson.practice) {
     $app.innerHTML = `
-      ${topBar({ left: backButton('/'), center: levelHeader() })}
+      ${levelBar(replayResultButton())}
       <div class="results">
         ${face}
         ${resultDots()}
-        <div class="btn-row">
+        <div class="btn-row later">
           <button class="btn" data-action="up" data-value="/" aria-label="${T.back}">${icon('back')}</button>
           <button class="btn primary" data-action="retry" aria-label="${T.again}">${icon('refresh')}</button>
         </div>
       </div>`;
-    if (lesson.passed) celebrate();
+    showResultInOrder();
     return;
   }
-  const toLevels = `<button class="btn" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
+  // back to the levels map: the same steps symbol as on the Niveluri card of the main page
+  const toLevels = `<button class="btn" data-action="up" data-value="/levels" aria-label="${T.levels}"><span class="go-levels">${icon('steps')}</span></button>`;
   let buttons;
   if (!lesson.passed) {
     buttons = `${toLevels}<button class="btn primary" data-action="retry" aria-label="${T.again}">${icon('refresh')}</button>`;
   } else {
-    // passed: back to the levels map (the next level is chosen there, not started automatically)
-    buttons = `<button class="btn primary" data-action="up" data-value="/levels" aria-label="${T.levels}">${icon('steps')}</button>`;
+    // passed: back to the levels map (to redo it from there), or straight on to the next level
+    const isLast = lesson.level === LEVEL_DATA.length - 1;
+    // the next button says where it goes: a moving arrow → and the next level's tile (as on Niveluri)
+    const n = lesson.level + 1;
+    buttons = isLast
+      ? `<button class="btn primary" data-action="up" data-value="/levels" aria-label="${T.levels}"><span class="go-levels">${icon('steps')}</span></button>`
+      : `${toLevels}<button class="btn primary go-next" data-action="nextLevel" aria-label="${T.next}: ${levelName(n)}"><span class="go-arrow"><svg class="icon" viewBox="0 0 34 24" aria-hidden="true"><line x1="3" y1="12" x2="29" y2="12"/><polyline points="21 4 29 12 21 20"/></svg></span><span class="go-tile"><b>${levelText(n)}</b><span class="go-stars">${stars(n)}</span></span></button>`;
   }
   $app.innerHTML = `
-    ${topBar({ left: backButton('/levels'), center: `<div class="level-label"><span>${levelName(lesson.level)}</span></div>` })}
+    ${levelBar(replayResultButton())}
     <div class="results">
       ${face}
       ${resultDots()}
-      <div class="btn-row">${buttons}</div>
+      <div class="btn-row later">${buttons}</div>
     </div>`;
-  if (lesson.passed) celebrate();
+  showResultInOrder();
+}
+
+// The result screen comes in order: first the dots one by one, then the picture (party popper,
+// thumbs up or plant) starts, then the two buttons at the bottom appear.
+const RESULT_BUTTONS_AFTER = 3000; // ms after the picture starts
+const THUMB_BUTTONS_SOONER = 1000;  // with the thumbs up the buttons come this much sooner
+const STAR_BUTTONS_LATER = 1000;    // passed: the buttons come this much later (the stars fly down first)
+function showResultInOrder() {
+  const start = () => { if (lesson.passed) celebrate(); else repeatThumb(); };
+  const face = $app.querySelector('.results > .party, .results > .thumb, .results > .plant');
+  const row = $app.querySelector('.btn-row.later');
+  if (!face || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    if (row) row.classList.remove('later');
+    if (lesson.passed) { soundPassed(); soundLater(() => playVoice('good'), 700); }
+    else soundLater(() => playVoice('again'), 300);
+    return start();
+  }
+  // the last dot has popped in: 0.15 s wait, resultDotGap between dots, 0.35 s each
+  const n = lesson.log.length;
+  const dotsDone = Math.round((0.15 + Math.max(0, n - 1) * resultDotGap(n) + 0.35) * 1000);
+  const after = RESULT_BUTTONS_AFTER - (face.classList.contains('thumb') ? THUMB_BUTTONS_SOONER : 0)
+    + (face.classList.contains('party') ? STAR_BUTTONS_LATER : 0);
+  if (row) row.style.setProperty('--later', (dotsDone + after) + 'ms');
+  // a pip as each dot pops in (in the middle of its 0.35 s pop)
+  lesson.log.forEach((ok, k) => soundLater(() => face.isConnected && soundDot(k, ok), (0.15 + k * resultDotGap(n) + 0.12) * 1000));
+  face.classList.add('waiting');
+  const anims = face.getAnimations({ subtree: true });
+  anims.forEach(an => an.pause());
+  clearTimeout(celebrateTimer);
+  celebrateTimer = setTimeout(() => {
+    if (!face.isConnected) return;
+    face.classList.remove('waiting');
+    slideInPoppers(face);
+    if (!lesson.passed) notPassedSounds(face);
+    anims.forEach(an => { an.currentTime = 0; an.play(); });
+    start();
+  }, dotsDone);
+}
+
+// Passed: right after the last dot, the two poppers come in from the sides of the screen (tilted,
+// fading in), so they do not just switch on. Their own shake starts meanwhile, so they arrive,
+// wind up and bang, with no extra waiting.
+const POPPER_IN_MS = 550;
+function slideInPoppers(face) {
+  if (!face.classList.contains('party')) return;
+  face.querySelectorAll('.popper').forEach(pop => {
+    const side = pop.classList.contains('flip') ? 1 : -1;
+    pop.animate([
+      { transform: `translateX(${side * 70}px) rotate(${side * 25}deg) scale(.6)`, opacity: 0 },
+      { opacity: 1, offset: 0.6 },
+      { transform: 'none', opacity: 1 },
+    ], { duration: POPPER_IN_MS, easing: 'cubic-bezier(.2, .9, .3, 1.15)' });
+  });
 }
 
 // Confetti for a passed result: shot out of the popper's mouth with its bang, it flutters down and
 // stays lying on the ground until the result screen is left (see clearConfetti). Timed with the
-// popper's own animation (both last CELEBRATE_MS and start together). Right after it ends, the
-// popper pops again with a new handful of confetti, as long as the result screen is open.
-const CELEBRATE_MS = 5200, CELEBRATE_PAUSE_MS = 0, CELEBRATE_KEEP = 3; // bursts lying on the ground
+// popper's own animation (both last CELEBRATE_MS and start together). A little before it ends
+// (its quiet end is cut by CELEBRATE_CUT_MS), the popper pops again with a new handful of
+// confetti, as long as the result screen is open.
+const CELEBRATE_MS = 5200, CELEBRATE_CUT_MS = 300, CELEBRATE_KEEP = 3; // bursts lying on the ground
 let celebrateTimer = 0;
+let soundTimers = [];
+const soundLater = (fn, ms) => soundTimers.push(setTimeout(fn, ms));
+const POPPER_BANG_MS = 960; // the bang in the poppers' animation (18.46 % of CELEBRATE_MS)
 function celebrate() {
   clearConfetti();
-  const pop = $app.querySelector('.popper');
-  if (!pop) return;
+  const pops = [...$app.querySelectorAll('.popper')];
+  if (!pops.length) return;
   const layer = document.createElement('div');
   layer.className = 'confetti';
   layer.setAttribute('aria-hidden', 'true');
   document.body.appendChild(layer);
-  confettiBurst(pop, layer);
+  pops.forEach(pop => confettiBurst(pop, layer));
+  flyStars();
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  soundLater(() => pops[0].isConnected && soundPop(), POPPER_BANG_MS);
+  // practice has no stars to fly: the chime and Bravo come just after the bang
+  if (!$app.querySelector('.star-slot i')) {
+    soundLater(() => { if (pops[0].isConnected) soundPassed(); }, POPPER_BANG_MS + 300);
+    soundLater(() => { if (pops[0].isConnected) playVoice('good'); }, POPPER_BANG_MS + 1100);
+  }
   const again = () => {
-    if (!pop.isConnected || !layer.isConnected) return;
-    // the popper's own animations start over, and a new burst flies out
-    pop.getAnimations({ subtree: true }).forEach(an => { an.currentTime = 0; an.play(); });
-    // not too many on the floor: the oldest burst slowly fades away
+    if (!pops[0].isConnected || !layer.isConnected) return;
+    // the poppers' own animations start over, and new bursts fly out
+    pops.forEach(pop => pop.getAnimations({ subtree: true }).forEach(an => { an.currentTime = 0; an.play(); }));
+    // not too many on the floor: the oldest bursts slowly fade away
     const bursts = layer.querySelectorAll('.anchor:not(.fading)');
-    for (let k = 0; k <= bursts.length - CELEBRATE_KEEP; k++) {
+    for (let k = 0; k <= bursts.length - CELEBRATE_KEEP * pops.length; k++) {
       const old = bursts[k];
       old.classList.add('fading');
       old.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 1200, easing: 'ease-in', fill: 'forwards' })
         .onfinish = () => old.remove();
       setTimeout(() => old.remove(), 1500); // in case the fade never gets to finish (page in the background)
     }
-    confettiBurst(pop, layer);
-    celebrateTimer = setTimeout(again, CELEBRATE_MS + CELEBRATE_PAUSE_MS);
+    pops.forEach(pop => confettiBurst(pop, layer));
+    soundLater(() => pops[0].isConnected && soundPop(0.15), POPPER_BANG_MS); // (quieter than the first)
+    // the landed stars shine again with each bang
+    clearTimeout(starTimer);
+    starTimer = setTimeout(shineStars, STAR_SHINE_AGAIN_AT);
+    celebrateTimer = setTimeout(again, CELEBRATE_MS - CELEBRATE_CUT_MS);
   };
-  celebrateTimer = setTimeout(again, CELEBRATE_MS + CELEBRATE_PAUSE_MS);
+  celebrateTimer = setTimeout(again, CELEBRATE_MS - CELEBRATE_CUT_MS);
+}
+// Not passed, half or more right: the thumbs up plays again every few seconds while the screen
+// is open (it lasts THUMB_MS, then a pause). Stopped by clearConfetti when the screen is left.
+const THUMB_MS = 3000, THUMB_PAUSE_MS = 500;
+function repeatThumb() {
+  clearTimeout(celebrateTimer);
+  const thumb = $app.querySelector('.thumb');
+  if (!thumb || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+  const again = () => {
+    if (!thumb.isConnected) return;
+    thumb.getAnimations({ subtree: true }).forEach(an => { an.currentTime = 0; an.play(); });
+    celebrateTimer = setTimeout(again, THUMB_MS + THUMB_PAUSE_MS);
+  };
+  celebrateTimer = setTimeout(again, THUMB_MS + THUMB_PAUSE_MS);
 }
 function confettiBurst(pop, layer) {
   const W = window.innerWidth, H = window.innerHeight;
   // where the mouth is on the screen, from the layout (the page may still be turning)
-  const x = layoutLeft(pop) + pop.offsetWidth * POPPER_MOUTH.x;
+  const flip = pop.classList.contains('flip'); // the right popper is mirrored: its mouth points left
+  const x = layoutLeft(pop) + pop.offsetWidth * (flip ? 1 - POPPER_MOUTH.x : POPPER_MOUTH.x);
   const y = layoutTop(pop) - window.scrollY + pop.offsetHeight * POPPER_MOUTH.y;
   const anchor = document.createElement('div');
   anchor.className = 'anchor';
@@ -2447,11 +2984,11 @@ function confettiBurst(pop, layer) {
   const colors = ['#E8503A', '#2E9E5B', '#3D7BE8', '#F4B400', '#F98DB0', '#A35BE0'];
   const shapes = [[9, 5, '1px'], [10, 16, '2px'], [10, 10, '50%'], [5, 18, '2px'], [12, 12, '2px']];
   const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
-  for (let k = 0; k < 56; k++) {
+  for (let k = 0; k < 40; k++) {    // (two poppers: 40 pieces each)
     const [w, h, radius] = shapes[k % shapes.length];
     const piece = document.createElement('div');
     piece.className = 'cf ' + 'abc'[k % 3];
-    const ax = rnd(-0.45, 0.45) * W + rnd(0, 40);           // burst: up and out of the mouth
+    const ax = rnd(-0.45, 0.45) * W + rnd(0, 40) * (flip ? -1 : 1); // burst: up and out of the mouth
     const ay = rnd(-340, -60);
     const lx = Math.min(W - x - 14, Math.max(14 - x, ax + rnd(-60, 60))); // lands inside the screen
     const pile = rnd(6, 26);                                  // how high it lies above the bottom edge
@@ -2471,21 +3008,103 @@ function confettiBurst(pop, layer) {
 }
 const clearConfetti = () => {
   clearTimeout(celebrateTimer);
-  document.querySelectorAll('.confetti').forEach(el => el.remove());
+  clearTimeout(starTimer);
+  soundTimers.forEach(clearTimeout);
+  soundTimers = [];
+  document.querySelectorAll('.confetti, .star-fly').forEach(el => el.remove());
 };
 
-/* ---------- Settings ---------- */
-function allSoundKeys() {
-  const keys = new Set(Object.values(VOICE).map(v => v.key));
-  LETTERS.forEach(l => {
-    keys.add(letterKey(l));
-    if (l.word) keys.add(textKey(l.word));
-  });
-  LEVEL_DATA.forEach(level => [...level.items, ...splitSyllables(level.items)].forEach(t => keys.add(textKey(t))));
-  return keys;
+// Passed: just after the poppers' bang, the level's stars come down from the top bar (the bar's
+// own stars stay where they are: copies fly), grow big above the result dots and shine.
+// They stay there; with every new bang they shine again.
+const STAR_FLY_AT = 1500;  // ms after the poppers start (their bang is at about 0.96 s)
+const STAR_FLY_MS = 900;   // the flight
+const STAR_SHINE_AGAIN_AT = POPPER_BANG_MS + 500; // (0.5 s after the bang) // with each later pop: the landed stars grow and shine this long after the poppers start
+const STAR_GAP_MS = 120;   // with 2 or 3 stars, each starts a little after the one before
+const RISE_SOONER_MS = 500; // the stars' whoosh starts this much before they take off (right after the bang)
+let starTimer = 0;
+function flyStars() {
+  clearTimeout(starTimer);
+  const slot = $app.querySelector('.star-slot');
+  if (!slot || !slot.children.length) return;
+  const from = [...$app.querySelectorAll('.level-label .lv-stars i')].filter(el => !el.closest('.page-old'));
+  const targets = [...slot.children];
+  if (from.length !== targets.length || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    targets.forEach(t => t.classList.add('on'));
+    if (from.length) emptyBarStars(from[0].parentElement, true);
+    return;
+  }
+  // the whoosh starts a moment before the stars take off, so it follows the bang closely
+  soundLater(() => { if (slot.isConnected) soundRise(RISE_SOONER_MS / 1000 + STAR_FLY_MS / 1000 + (targets.length - 1) * STAR_GAP_MS / 1000); },
+    STAR_FLY_AT - RISE_SOONER_MS);
+  starTimer = setTimeout(() => {
+    if (!slot.isConnected) return;
+    let left = targets.length;
+    targets.forEach((t, k) => {
+      const a = from[k].getBoundingClientRect(), b = t.getBoundingClientRect();
+      const clone = document.createElement('div');
+      clone.className = 'star-fly';
+      clone.setAttribute('aria-hidden', 'true');
+      clone.textContent = '⭐';
+      Object.assign(clone.style, {
+        left: b.left + 'px', top: b.top + 'px', width: b.width + 'px', height: b.height + 'px',
+        fontSize: getComputedStyle(t).fontSize,
+      });
+      document.body.appendChild(clone);
+      // from the small star in the bar to its big place, in a slight curve, a little too big at the end
+      const dx = a.left + a.width / 2 - (b.left + b.width / 2);
+      const dy = a.top + a.height / 2 - (b.top + b.height / 2);
+      const s0 = a.height / b.height;
+      const anim = clone.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(${s0})` },
+        { transform: `translate(${dx * 0.35}px, ${dy * 0.45}px) scale(${0.3 + s0}) rotate(-20deg)`, offset: 0.5 },
+        { transform: 'scale(1.18) rotate(8deg)', offset: 0.85 },
+        { transform: 'none' },
+      ], { duration: STAR_FLY_MS, delay: k * STAR_GAP_MS, easing: 'cubic-bezier(.45, 0, .3, 1)', fill: 'both' });
+      const land = () => {
+        if (!clone.isConnected) return;
+        clone.remove();
+        t.classList.add('on');
+        if (--left === 0) shineStars(true);
+      };
+      anim.onfinish = land;
+      setTimeout(land, STAR_FLY_MS + k * STAR_GAP_MS + 400); // in case the animation never finishes (page in the background)
+    });
+    emptyBarStars(from[0].parentElement); // (after measuring: the letters move)
+  }, STAR_FLY_AT);
+}
+// The stars have left the top bar: nothing stays in their place, and the letters glide back to the middle.
+function emptyBarStars(box, instant = false) {
+  box.querySelectorAll('i').forEach(i => { i.style.visibility = 'hidden'; }); // (each flying copy covers its place until it leaves)
+  box.classList.add('emptying');
+  if (instant) { box.style.width = '0px'; box.style.marginLeft = '0px'; return; }
+  box.animate([
+    { width: box.offsetWidth + 'px', marginLeft: getComputedStyle(box).marginLeft },
+    { width: '0px', marginLeft: '0px' },
+  ], { duration: 550, delay: 150, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+}
+function shineStars(first = false) {
+  const slot = $app.querySelector('.star-slot');
+  if (!slot || !slot.querySelector('i.on')) return;
+  if (first) {
+    soundPassed(); // the stars have landed
+    soundLater(() => { if (slot.isConnected) playVoice('good'); }, 800); // "Bravo!"
+  } // (shining again with the later pops is silent: no twinkle)
+  slot.classList.remove('shine');
+  void slot.offsetWidth; // restart the animation
+  slot.classList.add('shine');
 }
 
+/* ---------- Settings ---------- */
+// Every sound to record: the rows of the recording page, each once.
+function allSoundRows() {
+  const seen = new Set();
+  return recorderRows().flatMap(sec => sec.rows).filter(r => !seen.has(r.key) && seen.add(r.key));
+}
+const allSoundKeys = () => new Set(allSoundRows().map(r => r.key));
+
 function renderSettings() {
+  recMissing = null;
   if (hasSpeech && !roVoice) findVoice();
   const voiceText = !hasSpeech ? T.voiceUnsupported : roVoice ? T.voiceFound(roVoice.name) : T.voiceMissing;
   const keys = allSoundKeys();
@@ -2548,6 +3167,7 @@ function renderOverview() {
     // the choices of this level's questions (2, 2, 3, 3 … or the level's own list)
     const choiceList = lv.choices || Array.from({ length: findLength(i) }, (_, k) => Math.min(MAX_OPTIONS, 2 + Math.floor(k / 2)));
     total += add(T.ovFind, findLength(i), findNote.replace('2, 2, 3, 3, 4, 4', choiceList.join(', ')));
+    if (steps.includes('initial')) total += add(T.ovInitial, initialLength(i), T.ovInitialNote(initialFresh(i), own.join(' '), initialChoices(i).join(', ')));
     total += add(T.ovPair, 1, T.ovPairs(pairCount(i)) + (lv.stars === 3 ? ` · ${T.ovAnyLetters}` : ''));
     // a learning page, not an exercise: shown, but not counted
     if (steps.includes('read')) rows.push(`<tr><td>${T.ovRead}<small>${T.ovLearnPage(lv.items.length)}</small></td><td class="num">–</td></tr>`);
@@ -2622,6 +3242,10 @@ function letterRows(l) {
   return rows;
 }
 
+// A word on the recording page with its picture before it (an emoji, or a small image).
+const withPicture = (word, pic) => (!pic ? word
+  : isImageFile(pic) ? `<img class="rec-pic" src="${pic}" alt="">${word}` : `${pic} ${word}`);
+
 function recorderRows() {
   const sections = [{
     title: T.instructions,
@@ -2634,16 +3258,26 @@ function recorderRows() {
       inLevels.add(l);
       rows.push(...letterRows(l));
     });
-    level.items.forEach(t => rows.push({ key: textKey(t), text: t }));
+    level.items.forEach(t => rows.push({ key: textKey(t), text: withPicture(t, wordPicture(t)) }));
     splitSyllables(level.items).forEach(t => rows.push({ key: textKey(t), text: t, note: T.recSplit }));
     sections.push({ title: levelName(i), rows });
   });
+  // the words of "Cu ce literă începe?" (only those of letters taught in the levels)
+  const taught = [...inLevels].map(l => l.lower);
+  const initialRows = Object.keys(WORD_BANK).filter(w => taught.includes(firstLetter(w)))
+    .map(w => ({ key: textKey(w), text: withPicture(w, WORD_BANK[w]) }));
+  if (initialRows.length) sections.push({ title: T.ovInitial, rows: initialRows });
   const others = LETTERS.filter(l => !inLevels.has(l)).flatMap(letterRows);
   if (others.length) sections.push({ title: T.otherLetters, rows: others });
   return sections;
 }
 
+// What was not recorded when the recording page opened: shown first, so you can record them one
+// after another. (Kept until you leave the page, so a word does not jump away right after recording.)
+let recMissing = null;
+
 function renderRecorder() {
+  if (!recMissing) recMissing = new Set(allSoundRows().filter(r => !audioFiles.has(r.key)).map(r => r.key));
   if (serverOk === null) {
     checkServer().then(() => { if (currentPath() === '/inregistrare') renderRecorder(); });
   }
@@ -2652,7 +3286,9 @@ function renderRecorder() {
     body = `<section><p>${serverOk === null ? '…' : T.recorderNoServer}</p></section>`;
   } else {
     const seen = new Set();
-    body = `<section><p>${T.recorderHelp}</p></section>` + recorderRows().map(sec => {
+    const missingRows = allSoundRows().filter(r => recMissing.has(r.key));
+    const sections = missingRows.length ? [{ title: T.missingTitle(missingRows.length), rows: missingRows, first: true }, ...recorderRows()] : recorderRows();
+    body = `<section><p>${T.recorderHelp}</p></section>` + sections.map(sec => {
       const rows = sec.rows.filter(r => !seen.has(r.key) && seen.add(r.key)).map(r => {
         const has = audioFiles.has(r.key);
         const isRec = recorder && recorder.key === r.key;
@@ -2664,7 +3300,7 @@ function renderRecorder() {
           <button class="rec-btn rec-main${isRec ? ' recording' : ''}" data-action="rec" data-value="${r.key}"${busy ? ' disabled' : ''}>${isRec ? icon('stop') + `<span class="lbl">${T.stop}</span>` : icon('mic') + `<span class="lbl">${T.record}</span>`}</button>
         </div>`;
       }).join('');
-      return rows ? `<section><h2>${sec.title}</h2>${rows}</section>` : '';
+      return rows ? `<section${sec.first ? ' class="rec-todo"' : ''}><h2>${sec.title}</h2>${rows}</section>` : '';
     }).join('');
   }
   $app.innerHTML = `
@@ -2760,6 +3396,7 @@ async function toWav(blob) {
 const actions = {
   go: path => navigate(path),
   up: parent => goUp(parent),
+  replayResult: () => { clearConfetti(); renderResult(); },
   toTop: () => window.scrollTo(0, 0), // a direct jump: smooth scrolling is not reliable on every phone
 
   // alphabet
@@ -2864,6 +3501,8 @@ const actions = {
   },
   stepPrev: () => jumpToStep(lesson.step - 1),
   stepNext: () => jumpToStep(lesson.step + 1),
+  qPrev: () => jumpQuestion(-1),
+  qNext: () => jumpQuestion(1),
   setTheme(value) {
     settings.theme = value;
     saveSettings();

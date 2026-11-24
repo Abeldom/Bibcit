@@ -72,23 +72,23 @@ const LEVELS = [
   // letter order: a, m, i, n, d, e
   { letters: 'a', stars: 1, find: 6, syllables: [],                words: [] },  // one letter alone: nothing to combine yet
 
-  { letters: 'm', stars: 1, find: 6, syllables: ['ma'],            words: [] },
-  { letters: 'm', stars: 2, find: 6, syllables: ['am'],            words: ['mama'] },
+  { letters: 'm', stars: 1, find: 6, quiz: 2, syllables: ['ma'],   words: ['mama'] },
+  { letters: 'm', stars: 2, find: 6, quiz: 4, syllables: ['am'],   words: [] },
 
   { letters: 'i', stars: 1, syllables: ['mi'],                     words: [] },
   { letters: 'i', stars: 2, syllables: ['ia'],                     words: [] },
   { letters: 'i', stars: 3, syllables: ['ai'],                     words: ['Mai'] },
 
-  { letters: 'n', stars: 1, syllables: ['an', 'ni'],               words: [] },
+  { letters: 'n', stars: 1, syllables: ['ni'],                     words: ['an'] },  // an = year (with a picture)
   { letters: 'n', stars: 2, syllables: [],                         words: ['Ana', 'ani'] },
-  { letters: 'n', stars: 3, syllables: [],                         words: ['inima'] },
+  { letters: 'n', stars: 3, syllables: [],                         words: ['inimă'] },  // ă is shown, not taught yet
 
   { letters: 'd', stars: 1, syllables: ['da', 'di'],               words: [] },
   { letters: 'd', stars: 2, syllables: [],                         words: ['dai', 'iad'] },
   { letters: 'd', stars: 3, syllables: [],                         words: ['Nadia'] },
 
   { letters: 'e', stars: 1, syllables: ['me', 'ne'],               words: [] },
-  { letters: 'e', stars: 2, syllables: ['ea'],                     words: ['mea'] },
+  { letters: 'e', stars: 2, syllables: [],                         words: ['ea', 'mea'] },  // ea = she (with a picture)
   { letters: 'e', stars: 3, syllables: [],                         words: ['mine', 'Ema'] },
 ];
 
@@ -103,6 +103,7 @@ const SIMILAR_LETTERS = [
 // here by hand, with "-" between the syllables (the app shows them as Na + di + a).
 const SYLLABLE_SPLIT = {
   Nadia: 'Na-di-a',
+  ani: 'ani',      // one syllable: shown letter by letter, a + n + i
 };
 
 // ---------------------------------------------------------------------
@@ -124,4 +125,27 @@ const WORD_PICTURES = {
   Ana:  '👧',                 // a girl's name
   una:  '1️⃣',                 // one
   sun:  '📞',                 // I call (on the phone)
+  an:   'pictures/an.jpg',    // a year: a calendar of the whole year (picture added by the user)
+  ani:  'pictures/ani.jpg',   // years: a woman with a birthday cake full of candles (picture added by the
+                               // user; photo marked MAZKO VADIM / mazkovadim.com; whole photo, 640 px copy of ani-original.jpg)
+  dai:  'pictures/dai.jpg',   // you give: one person gives another a present (picture added by the user)
+  iad:  'pictures/iad.jpg',   // hell: flames (picture added by the user)
+  inimă: '❤️',               // the heart (as in Alfabetul)
+  ea:   'pictures/ea.jpg',    // she: a woman's face (picture added by the user)
+  mine: 'pictures/mine.png',  // me: a person pointing at himself (picture added by the user)
+};
+
+// ---------------------------------------------------------------------
+// 4. More words for "Cu ce literă începe?" (a picture, its word is spoken, tap the first letter)
+// ---------------------------------------------------------------------
+// The task also uses the words of WORD_PICTURES and the example words of Alfabetul.
+// Add easy, everyday words here, with an emoji or a picture file. Avoid words that start
+// with "ea", "ia", "ie" (their first sound is not the letter you see).
+const INITIAL_WORDS = {
+  albină: '🐝', ananas: '🍍',
+  mașină: '🚗', minge: '⚽',
+  inel: '💍',
+  nor: 'pictures/nor.svg',   // a big cloud in a blue sky (drawn for Bibcit; ☁️ alone was too plain)
+  delfin: '🐬', dovleac: 'pictures/dovleac.svg',   // a plain pumpkin (drawn for Bibcit; 🎃 has a carved face)
+  elicopter: '🚁',
 };

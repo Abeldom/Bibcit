@@ -1,18 +1,19 @@
 /* Bibcit – very big and simple: huge letters, big buttons, one thing per screen. */
 
 /* Capital I (and Î) as a single straight line: Andika draws it with cross-bars, so for these
-   letters a plain sans font of the device is used instead. */
+   letters a plain sans font of the device is used instead. The same for the small a (and ă, â):
+   Andika draws the round school "ɑ"; the learner should know the printed a seen everywhere. */
 @font-face {
   font-family: 'PlainI';
   src: local('Roboto'), local('Roboto-Regular'), local('Noto Sans'), local('Arial'), local('Helvetica'), local('Segoe UI');
   font-weight: 400;
-  unicode-range: U+0049, U+00CE;   /* I and Î */
+  unicode-range: U+0049, U+00CE, U+0061, U+0103, U+00E2;   /* I, Î, a, ă, â */
 }
 @font-face {
   font-family: 'PlainI';
   src: local('Roboto Bold'), local('Roboto-Bold'), local('Noto Sans Bold'), local('Arial Bold'), local('Arial-BoldMT'), local('Helvetica Bold'), local('Segoe UI Bold');
   font-weight: 700;
-  unicode-range: U+0049, U+00CE;   /* I and Î */
+  unicode-range: U+0049, U+00CE, U+0061, U+0103, U+00E2;   /* I, Î, a, ă, â */
 }
 
 :root {
@@ -81,6 +82,9 @@
 * { box-sizing: border-box; }
 
 html, body { margin: 0; min-height: 100%; }
+/* room for the scrollbar is always kept (on computers), so pages do not shift sideways when one
+   page is taller than the screen and the next is not */
+html { scrollbar-gutter: stable; }
 
 body {
   background: var(--bg);
@@ -191,13 +195,15 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   line-height: 1;
 }
 .home-card .art .glyphs { gap: .15em; }
+.tile .glyphs { gap: .3em; }   /* Alfabetul: clear room between the big and the small letter */
 .home-card .art .abc { font-size: .72em; white-space: nowrap; }
 .home-card .label { display: flex; align-items: center; gap: 12px; font-size: 1.8rem; font-weight: 700; }
 .home-card .label .icon { width: 38px; height: 38px; }
+.home-card .label .emoji-ic { font-size: 2.2rem; line-height: 1; }   /* Alfabetul: 🔤 */
 .home-card .label .count { margin-left: auto; font-size: 1.3rem; opacity: .85; }
 .levels-card { background: var(--accent); color: var(--accent-ink); }
 /* Niveluri card: one line – 2 learned letters, the current one big, the next one faint */
-.mini-map { display: flex; align-items: baseline; justify-content: center; gap: .9em; white-space: nowrap; font-size: clamp(1.3rem, 6.5vw, 2rem); }
+.mini-map { display: flex; align-items: baseline; justify-content: center; gap: .9em; white-space: nowrap; font-size: clamp(1.45rem, 7.4vw, 2.3rem); }
 .mini-map .before { opacity: .8; }
 .mini-map .now { font-size: 1.8em; }
 /* the letter being learned stands on a thin red line (red = the lesson's letter, as inside the words)
@@ -257,7 +263,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   border-radius: 20px;
   background: var(--card);
   box-shadow: var(--shadow);
-  font-size: 2.6rem;
+  /* as big as the widest pair ("W w") still fits in a tile: the tiles are a third of the screen */
+  font-size: min(3rem, calc((100vw - 56px) * .145));
   font-weight: 700;
   display: grid;
   place-items: center;
@@ -443,7 +450,7 @@ mark { background: none; color: var(--mark); }
 .step-jump { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 8px; }
 .step-jump .step-icons { margin: 0; }
 /* the steps of a level as icons: done (green ring), now (bigger, blue ring), still to come (faint) */
-.step-icons { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 2px 0 10px; }
+.step-icons { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 2px 0 10px; }
 .step-ic {
   position: relative;
   width: min(38px, 9.5vw); aspect-ratio: 1; flex: none;
@@ -579,6 +586,12 @@ mark { background: none; color: var(--mark); }
   clip-path: polygon(0 0, 100% 0, 100% 20%, 20% 100%, 0 100%);
 }
 .q-bubble .dots { position: relative; }   /* dots always above the pointer */
+/* test mode: small ‹ › beside the dots, to go to the previous / next question of the task */
+.q-bubble.jumping { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
+.q-jump { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  color: var(--accent); background: transparent; position: relative; }
+.q-jump .icon { width: 22px; height: 22px; stroke-width: 3; }
+.q-jump:disabled { opacity: .3; }
 .dots.small { gap: 9px; margin-top: 0; }
 .dots.small i { width: 15px; height: 15px; }
 .dots.small i.now { outline-width: 2px; outline-offset: 2px; }
@@ -649,12 +662,17 @@ mark { background: none; color: var(--mark); }
   45% { transform: scale(1.07); }
   100% { background: var(--good); color: #fff; transform: scale(1); }
 }
+/* a right pair: both cards jump up a little (and land with a small bounce) while turning green */
 @keyframes pair-green {
-  0% { background: var(--accent-soft); color: var(--ink); transform: scale(1); }
-  45% { transform: scale(1.07); }
-  100% { background: var(--good); color: #fff; transform: scale(1); }
+  0% { background: var(--accent-soft); color: var(--ink); transform: none; }
+  30% { transform: translateY(-16px) scale(1.06); }
+  55% { transform: translateY(0) scale(.98); }
+  72% { transform: translateY(-5px); }
+  100% { background: var(--good); color: #fff; transform: none; }
 }
-.pair-btn.correct.just { animation: pair-green .55s cubic-bezier(.3, .7, .3, 1); }
+.pair-btn.correct.just { animation: pair-green .7s cubic-bezier(.3, .7, .3, 1); }
+/* a wrong pair: both cards red for a moment (and they shake) */
+.pair-btn.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); transition: background .15s, border-color .15s; }
 .pair-btn.selected { animation: select-in .25s ease-out; }
 @keyframes select-in { from { background: var(--card); border-color: transparent; } }
 
@@ -688,11 +706,21 @@ mark { background: none; color: var(--mark); }
 .match-btn { font-size: clamp(1.8rem, 9vw, 2.6rem); }
 .match-btn.picture { display: grid; place-items: center; }
 .match-btn .pic { font-size: clamp(2.6rem, 13vw, 3.4rem); line-height: 1; }
-.match-btn .pic-img { width: clamp(60px, 18vw, 84px); height: clamp(60px, 18vw, 84px); object-fit: contain; border-radius: 8px; pointer-events: none; }
+/* photos are often wide: they may use the card's width (up to 150px), not just a square */
+.match-btn .pic-img { width: min(100%, 150px); height: clamp(76px, 24vw, 110px); object-fit: contain; border-radius: 8px; pointer-events: none; }
 
 /* ---------- syllables and words ---------- */
 .section { margin: 4px 0 0; font-size: 1.1rem; color: var(--muted); }
 .read-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+/* the reading step: syllables and words in one column, one card under the other */
+.read-list { display: flex; flex-direction: column; gap: 12px; }
+.read-list .read-btn { min-height: 120px; }
+.read-btn .txt { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+/* with a picture: the picture on the left, the word next to it (keeps the cards low) */
+.read-list .read-btn.with-pic { flex-direction: row; gap: 18px; padding: 10px 44px 10px 14px; }
+.read-list .read-btn.with-pic .txt { flex: 1; }
+.read-list .read-btn .pic { font-size: clamp(3rem, 15vw, 4rem); }
+.read-list .read-btn .pic-img { width: clamp(90px, 28vw, 120px); height: clamp(90px, 28vw, 120px); }
 .read-btn {
   min-height: 92px;
   border-radius: var(--radius);
@@ -720,7 +748,7 @@ mark { background: none; color: var(--mark); }
 .read-btn.playing { border-color: var(--accent); background: var(--accent-soft); } /* the card itself does not grow: only the part being said does */
 .read-btn.with-pic { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px 0; }
 .read-btn .pic { font-size: clamp(2.2rem, 11vw, 3rem); line-height: 1; }
-.read-btn .pic-img { width: clamp(64px, 21vw, 92px); height: clamp(64px, 21vw, 92px); object-fit: contain; border-radius: 8px; pointer-events: none; }
+.read-btn .pic-img { width: clamp(96px, 32vw, 140px); height: clamp(90px, 30vw, 128px); object-fit: contain; border-radius: 8px; pointer-events: none; }
 
 /* ---------- result ---------- */
 .results {
@@ -733,6 +761,70 @@ mark { background: none; color: var(--mark); }
   text-align: center;
 }
 .results .emoji { font-size: 7rem; line-height: 1; }
+/* Not passed, half or more right: the thumbs up ("Thumbs up" design), played once (--dur). */
+.thumb { --dur: 3s; width: min(220px, 56vw); aspect-ratio: 1; flex: none; }
+.thumb svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.thumb svg * { transform-box: view-box; }
+.th-a { animation-duration: var(--dur); animation-iteration-count: 1; animation-fill-mode: both; }
+@keyframes th-hand {
+  0% { transform: translate(0, 70px) rotate(-32deg) scale(.5); opacity: 0 }
+  12% { transform: translate(0, -8px) rotate(7deg) scale(1.05); opacity: 1 }
+  20% { transform: translate(0, 3px) rotate(-2deg) scale(.98) }
+  27% { transform: none }
+  40% { transform: translate(0, 6px) rotate(-7deg) scale(1.02, .95) }
+  48% { transform: translate(0, -16px) rotate(10deg) scale(1.05) }
+  57% { transform: translate(0, 3px) rotate(-3deg) scale(.99) }
+  65%, 100% { transform: none }
+}
+.th-hand { animation-name: th-hand; animation-timing-function: cubic-bezier(.3, .7, .3, 1); transform-origin: 104px 204px; }
+@keyframes th-thumb {
+  0%, 27% { transform: scale(1, .82) rotate(-6deg) }
+  40% { transform: scale(1.04, .86) rotate(-8deg) }
+  48% { transform: scale(.97, 1.12) rotate(4deg) }
+  57% { transform: scale(1, .97) rotate(-1deg) }
+  65%, 100% { transform: none }
+}
+.th-thumb { animation-name: th-thumb; animation-timing-function: cubic-bezier(.3, .7, .3, 1); transform-origin: 100px 122px; }
+@keyframes th-finger { 0%, 38% { transform: none } 44% { transform: translateX(-4px) scaleX(.95) } 54% { transform: translateX(1px) scaleX(1.01) } 62%, 100% { transform: none } }
+.th-f { animation-name: th-finger; animation-timing-function: ease-in-out; transform-origin: 118px 0px; }
+@keyframes th-ray { 0%, 47% { stroke-dashoffset: 100; opacity: 1 } 55% { stroke-dashoffset: 0; opacity: 1 } 64%, 100% { stroke-dashoffset: -100; opacity: 0 } }
+.th-ray { fill: none; stroke: #F4B400; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100 100; stroke-dashoffset: 100; animation-name: th-ray; animation-timing-function: cubic-bezier(.2, .8, .3, 1); }
+@keyframes th-spark { 0%, 50% { transform: scale(0) rotate(0deg); opacity: 0 } 58% { transform: scale(1.1) rotate(45deg); opacity: 1 } 72%, 100% { transform: scale(0) rotate(90deg); opacity: 0 } }
+.th-spark { animation-name: th-spark; animation-timing-function: ease-out; transform-box: fill-box !important; transform-origin: center; }
+@keyframes th-shadow { 0% { transform: scale(.3); opacity: 0 } 12% { transform: scale(1.05); opacity: .12 } 27%, 38% { transform: scale(1); opacity: .12 } 48% { transform: scale(.82); opacity: .08 } 60%, 100% { transform: scale(1); opacity: .12 } }
+.th-shadow { animation-name: th-shadow; transform-origin: 118px 214px; }
+@media (prefers-reduced-motion: reduce) {
+  .th-a { animation: none; }
+  .th-ray, .th-spark { opacity: 0; }
+}
+/* Not passed (less than half right): the growing plant ("Growing plant" design). It grows once
+   (--dur), then keeps swaying gently. */
+.plant { --dur: 5s; width: min(220px, 56vw); aspect-ratio: 1; flex: none; }
+.plant svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.plant svg * { transform-box: view-box; }
+.pl-a { animation-duration: var(--dur); animation-iteration-count: 1; animation-fill-mode: both; }
+@keyframes pl-soil { 0% { transform: scale(0) } 8% { transform: scale(1.1, .88) } 13% { transform: scale(.96, 1.05) } 18%, 100% { transform: scale(1) } }
+.pl-soil { animation-name: pl-soil; animation-timing-function: cubic-bezier(.3, .7, .3, 1); transform-origin: 120px 190px; }
+@keyframes pl-shadow { 0% { transform: scale(0); opacity: 0 } 10% { transform: scale(1.1); opacity: .14 } 18%, 100% { transform: scale(1); opacity: .12 } }
+.pl-shadow { animation-name: pl-shadow; transform-origin: 120px 192px; }
+@keyframes pl-crumb { 0%, 16% { transform: translate(0, 0) scale(0); opacity: 0 } 18% { transform: translate(0, 0) scale(1); opacity: 1 } 26% { transform: translate(var(--cx), var(--cy)) scale(1); opacity: 1 } 34%, 100% { transform: translate(calc(var(--cx) * 1.3), calc(var(--cy) + 22px)) scale(.6); opacity: 0 } }
+.pl-crumb { animation-name: pl-crumb; animation-timing-function: cubic-bezier(.2, .7, .4, 1); transform-box: fill-box !important; transform-origin: center; }
+@keyframes pl-stem { 0%, 16% { transform: scale(.6, 0) } 36% { transform: scale(1, 1.07) } 42% { transform: scale(1, .98) } 47%, 100% { transform: scale(1, 1) } }
+.pl-stem { animation-name: pl-stem; animation-timing-function: cubic-bezier(.25, .8, .35, 1); transform-origin: 120px 150px; }
+@keyframes pl-leafL { 0%, 34% { transform: scale(0) rotate(75deg) } 50% { transform: scale(1.08) rotate(-9deg) } 58% { transform: scale(.97) rotate(4deg) } 65%, 100% { transform: scale(1) rotate(0deg) } }
+.pl-leafL { animation-name: pl-leafL; animation-timing-function: cubic-bezier(.3, .7, .35, 1); transform-origin: 0px 0px; }
+@keyframes pl-leafR { 0%, 41% { transform: scale(0) rotate(-75deg) } 57% { transform: scale(1.08) rotate(9deg) } 65% { transform: scale(.97) rotate(-4deg) } 72%, 100% { transform: scale(1) rotate(0deg) } }
+.pl-leafR { animation-name: pl-leafR; animation-timing-function: cubic-bezier(.3, .7, .35, 1); transform-origin: 0px 0px; }
+@keyframes pl-spark { 0%, 62% { transform: scale(0) rotate(0deg); opacity: 0 } 70% { transform: scale(1.1) rotate(45deg); opacity: 1 } 82%, 100% { transform: scale(0) rotate(90deg); opacity: 0 } }
+.pl-spark { animation-name: pl-spark; animation-timing-function: ease-out; transform-box: fill-box !important; transform-origin: center; }
+@keyframes pl-sway { 0%, 100% { transform: rotate(-2deg) } 50% { transform: rotate(2.5deg) } }
+.pl-sway { animation: pl-sway 3.2s ease-in-out infinite; transform-origin: 120px 150px; }
+@keyframes pl-flutter { 0%, 100% { transform: rotate(0deg) } 50% { transform: rotate(-4deg) } }
+.pl-flutter { animation: pl-flutter 2.4s ease-in-out infinite; transform-origin: 0px 0px; }
+@media (prefers-reduced-motion: reduce) {
+  .pl-a, .pl-sway, .pl-flutter { animation: none; }
+  .pl-crumb, .pl-spark { opacity: 0; }
+}
 /* Passed: a party popper (the "Party Popper" design) shakes, bursts with streamers and sparkles,
    and shoots confetti that rains down and stays on the floor. It plays once (--dur), not in a loop. */
 .popper { --dur: 5.2s; width: min(230px, 58vw); aspect-ratio: 1; flex: none; position: relative; }
@@ -816,6 +908,11 @@ mark { background: none; color: var(--mark); }
 .result-dots i.miss { background: var(--retry); }
 @keyframes dot-in { from { transform: scale(0); opacity: 0; } }
 .btn-row { display: flex; gap: 12px; width: 100%; margin-top: 24px; }
+/* result screen: the picture waits until the dots are in, the buttons come last (timed from app.js) */
+.results > .waiting { visibility: hidden; }
+.btn-row.later { animation: btn-row-in .4s ease-out var(--later, 0s) both; }
+@keyframes btn-row-in { from { opacity: 0; transform: translateY(14px); visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .btn-row.later { animation: none; } }
 .btn {
   flex: 1;
   min-height: 80px;
@@ -830,6 +927,23 @@ mark { background: none; color: var(--mark); }
   font-weight: 700;
 }
 .btn.primary { flex: 2; background: var(--accent); color: var(--accent-ink); }
+/* passed: the next level's button shows where it goes: an arrow slowly pointing at the next
+   level's letters, with its stars under them */
+.btn.go-next { gap: 22px; padding: 8px 14px; min-height: 92px; white-space: nowrap; }
+.go-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.go-tile b { font-size: 2.3rem; line-height: 1; font-weight: 800; }
+/* back to Niveluri on the result screen: the Niveluri steps, big and bold enough to see at a glance */
+.go-levels { display: grid; }
+.go-levels .icon { width: 50px; height: 50px; stroke-width: 3; }
+.go-stars { font-size: 1rem; line-height: 1; letter-spacing: -1px; }
+.go-arrow { display: grid; place-items: center; width: 60px; height: 52px; flex: none; }
+.go-arrow .icon { width: 56px; height: 40px; stroke-width: 3.2; animation: go-arrow 2.6s ease-in-out infinite; }
+/* the arrow slowly stretches out towards the next level's tile, and back */
+@keyframes go-arrow {
+  0%, 100% { transform: translateX(-4px); }
+  50% { transform: translateX(8px); }
+}
+@media (prefers-reduced-motion: reduce) { .go-arrow .icon { animation: none; } }
 .btn:active { transform: scale(.97); }
 
 /* ---------- settings and recording page ---------- */
@@ -953,6 +1067,7 @@ mark { background: none; color: var(--mark); }
 }
 .rec-text.sentence { font-size: 1.15rem; white-space: normal; }
 .rec-text small { display: block; font-size: .9rem; font-weight: 400; color: var(--muted); }
+.rec-text .rec-pic { width: 1.6em; height: 1.2em; object-fit: contain; vertical-align: -0.2em; margin-right: .3em; border-radius: 4px; }
 .rec-btn {
   height: 48px;
   min-width: 48px;
@@ -1036,3 +1151,57 @@ html, body { overflow-x: hidden; }
 }
 .to-top.show { opacity: 1; pointer-events: auto; transform: none; }
 .to-top .icon { width: 30px; height: 30px; stroke-width: 3; }
+
+/* "Which letter does it start with?": the picture is the sound button (tap it to hear the word again) */
+.listen-btn.word-card { background: var(--card); color: var(--ink); border-radius: 28px; width: 190px; height: 170px; }
+.listen-btn.word-card .pic { font-size: 6.2rem; line-height: 1; pointer-events: none; }
+.listen-btn.word-card .pic-img { width: 160px; height: 140px; object-fit: contain; border-radius: 12px; pointer-events: none; }
+.listen-btn.word-card .ear {
+  position: absolute; right: -10px; bottom: -10px; width: 48px; height: 48px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; box-shadow: var(--shadow);
+}
+.listen-btn.word-card .ear .icon { width: 26px; height: 26px; }
+.listen-btn.word-card.ripple::before, .listen-btn.word-card.ripple::after { border-radius: 28px; }
+
+/* Recording page: what is still to record comes first */
+.rec-todo { box-shadow: inset 0 0 0 2px var(--accent), var(--shadow); }
+
+/* Passed: two party poppers, left and right (the right one mirrored); between them, above the
+   result dots, the level's stars land big and shine (see flyStars) */
+.party { display: flex; align-items: center; justify-content: space-between; width: calc(100% + 24px); margin: 0 -12px; gap: 2px; } /* the poppers reach a little into the side margins */
+.party .popper { width: min(140px, 30vw); }
+/* their empty streamer side reaches over the stars' place, so the cones stay inside the screen */
+.party .popper:first-child { margin-right: -16px; }
+.party .popper.flip { margin-left: -16px; }
+.popper.flip svg { transform: scaleX(-1); }
+.lv-stars { display: inline-block; margin-left: .25em; white-space: nowrap; }
+.lv-stars.emptying { overflow: clip; }
+.lv-stars i { font-style: normal; }
+.star-slot { position: relative; flex: none; display: flex; align-items: center; justify-content: center; gap: 2px; z-index: 1; }
+.star-slot i { display: block; font-style: normal; line-height: 1; visibility: hidden; }
+.star-slot.n1 i { font-size: 4.3rem; }
+.star-slot.n2 i { font-size: 3.39rem; }  /* 13 % bigger than 3rem */
+.star-slot.n3 i { font-size: 2.55rem; }  /* 11 % bigger than 2.3rem */
+.star-slot i.on { visibility: visible; filter: drop-shadow(0 0 6px rgba(255, 196, 0, .5)); }
+.star-slot.shine i { animation: star-shine 1.2s ease-out both; }
+.star-slot.shine i:nth-child(2) { animation-delay: .1s; }
+.star-slot.shine i:nth-child(3) { animation-delay: .2s; }
+@keyframes star-shine {
+  0% { transform: none; filter: drop-shadow(0 0 4px rgba(255, 196, 0, .4)); }
+  30% { transform: scale(1.22) rotate(-8deg); filter: drop-shadow(0 0 18px rgba(255, 200, 0, .95)); }
+  60% { transform: scale(.96) rotate(4deg); }
+  100% { transform: none; filter: drop-shadow(0 0 6px rgba(255, 196, 0, .5)); }
+}
+/* rays behind the stars, turning and fading as they shine */
+.star-slot::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 220%; aspect-ratio: 1; margin: -110% 0 0 -110%;
+  border-radius: 50%; z-index: -1; opacity: 0; pointer-events: none;
+  background: repeating-conic-gradient(rgba(255, 205, 60, .55) 0deg 9deg, transparent 9deg 30deg);
+  -webkit-mask: radial-gradient(closest-side, #000 25%, transparent 100%);
+  mask: radial-gradient(closest-side, #000 25%, transparent 100%);
+}
+.star-slot.n2::before, .star-slot.n3::before { width: 160%; margin: -80% 0 0 -80%; }
+.star-slot.shine::before { animation: star-rays 1.6s ease-out both; }
+@keyframes star-rays { 0% { opacity: 0; transform: scale(.4) rotate(0deg); } 30% { opacity: 1; } 100% { opacity: 0; transform: scale(1.1) rotate(60deg); } }
+.star-fly { position: fixed; z-index: 60; display: grid; place-items: center; line-height: 1; pointer-events: none; will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .star-slot.shine i, .star-slot.shine::before { animation: none; } }
